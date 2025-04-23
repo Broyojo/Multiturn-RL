@@ -1,10 +1,15 @@
 [project]
 name = "multiturn-rl"
 version = "0.1.0"
-description = "Add your description here"
+description = "Multiturn RL experiments"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["verl[gpu,vllm]"]
+dependencies = ["verl[gpu,vllm]", "flashinfer-python"]
 
 [tool.uv.sources]
 verl = { path = "verl", editable = true }
+flashinfer-python = { index = "flashinfer" }
+
+[[tool.uv.index]]
+name = "flashinfer"
+url = "https://flashinfer.ai/whl/cu124/torch2.6/"
