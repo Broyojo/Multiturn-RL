@@ -175,7 +175,6 @@ class RayPRIMETrainer(RayPPOTrainer):
     def _validate_config(self):
         super()._validate_config()
         # TODO: Additional config checks can be added here
-        config = self.config
 
     def _create_dataloader(self):
         from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
@@ -248,7 +247,6 @@ class RayPRIMETrainer(RayPPOTrainer):
             actor_local_path,
             actor_remote_path,
             self.global_steps,
-            remove_previous_ckpt=self.config.trainer.remove_previous_ckpt_in_save,
         )
 
         if self.use_rm:
@@ -262,7 +260,6 @@ class RayPRIMETrainer(RayPPOTrainer):
                 reward_local_path,
                 reward_remote_path,
                 self.global_steps,
-                remove_previous_ckpt=self.config.trainer.remove_previous_ckpt_in_save,
             )
 
         # save dataloader
@@ -334,8 +331,8 @@ class RayPRIMETrainer(RayPPOTrainer):
     def fit(self):
         """
         The training loop of PPO.
-        The driver process only need to call the compute functions of the worker group through RPC to construct the PPO dataflow.
-        The light-weight advantage computation is done on the driver process.
+        The driver process only need to call the compute functions of the worker group through RPC to
+        construct the PPO dataflow. The light-weight advantage computation is done on the driver process.
         """
         from omegaconf import OmegaConf
 
@@ -416,7 +413,8 @@ class RayPRIMETrainer(RayPPOTrainer):
                         scores = self.reward_fn.verify(batch)
                         metrics["acc"] = statistics.mean(scores)
 
-                    # filter the batch. 1/oversample_factor samples will be kept. If there is a filter, prompts passing it will be prioritized.
+                    # filter the batch. 1/oversample_factor samples will be kept.
+                    # If there is a filter, prompts passing it will be prioritized.
 
                     batch = self.filter_and_downsample(scores, batch)
                     batch.meta_info["n"] = self.config.actor_rollout_ref.rollout.n
