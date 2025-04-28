@@ -4,7 +4,13 @@ version = "0.1.0"
 description = "Multiturn RL experiments"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["verl[gpu,vllm]", "flashinfer-python"]
+dependencies = [
+    "verl[gpu,vllm]",
+    "flashinfer-python",
+    "docker>=7.1.0",
+    "aiodocker>=0.24.0",
+    "matplotlib>=3.10.1",
+]
 
 [tool.uv.sources]
 verl = { path = "verl", editable = true }
