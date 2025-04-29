@@ -4,7 +4,16 @@ import time
 
 import docker
 
-CLIENT = docker.from_env()
+CLIENT = docker.from_env(max_pool_size=1024)
+
+"""
+TODO:
+
+maybe make the docker container serving into an API server? so we can use kubernetes and more high speed.
+we just connect to the TTY's through websockets?
+
+"""
+
 
 class Terminal:
     def __init__(self, image: str = "python:3.12"):
@@ -97,7 +106,7 @@ class Terminal:
 
 #     def start(self):
 #         self.container.start()
-        
+
 #     def stop(self, timeout=0):
 #         self.container.stop(timeout=timeout)
 #         self.container.remove(force=True)
@@ -170,7 +179,7 @@ class Terminal:
 
 #     async def start(self):
 #         await self._call_in_thread(self._inner.start)
-    
+
 #     async def stop(self, timeout=0):
 #         await self._call_in_thread(self._inner.stop, timeout=timeout)
 
@@ -191,7 +200,7 @@ class Terminal:
 #               f"time.sleep({delay}); print('shell', {idx}, 'done on', platform.node())\nPY\n"
 #         output = await term(cmd, timeout=delay + 1)
 #         return f"[shell {idx}] >>> {output.strip()}"
-    
+
 # async def main():
 #     MAX_NUM = 50
 #     bar = tqdm(total=MAX_NUM * (MAX_NUM + 1) / 2)
@@ -213,12 +222,13 @@ class Terminal:
 #         plt.title("Wall-time vs number of containers")
 #         plt.savefig("walltime-shared-2.png")
 
+
 def interact():
     with Terminal() as terminal:
         while True:
             user_input = input("input: ")
             print(terminal(user_input + "\n"))
-        
+
 
 if __name__ == "__main__":
     # asyncio.run(main())
