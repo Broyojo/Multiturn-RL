@@ -1,5 +1,7 @@
 import asyncio
-import concurrent.futures
+import os
+import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List
 
 import torch
@@ -7,40 +9,13 @@ from omegaconf import DictConfig
 from openai.types.chat.chat_completion import ChatCompletion
 from tensordict import TensorDict
 from terminal import Terminal
+from tqdm import tqdm
 
 from verl.protocol import DataProto
 from verl.workers.rollout.async_server import ChatCompletionScheduler
 
-"""
-user {
-    run ls
-}
-assistant {
-    <think>ok i need to run ls</think>
-    <terminal>ls -la
-    </terminal>
-}
-user {
-    <output>foo/
-    bar/
-    baz/
-    ~ $ </output>
-}
-assistant {
-    <answer>I have run the terminal and run ls</answer>
-}
 
-
-todo:
-- set stop sequence for terminal
-- extract terminal output from the chat and send to docker container with async
-- add multiturn with user message having the terminal output
-
-
-"""
-
-def create_terminal(traj_info):
-    messages, docker_image = traj_info
+def create_terminal(messages, docker_image):
     terminal = Terminal(image=docker_image).__enter__()
     return {
         "messages": list(messages),
@@ -48,21 +23,34 @@ def create_terminal(traj_info):
     }
 
 def create_terminals(batch, n_samples):
-    traj_infos = [(messages, extra_info["docker_image"]) 
-                  for messages, extra_info in zip(batch.non_tensor_batch["raw_prompt"], 
-                                             batch.non_tensor_batch["extra_info"])
-                  for _ in range(n_samples)]
+    terminal_args = []
+    for messages, extra_info in zip(batch.non_tensor_batch["raw_prompt"], 
+                                    batch.non_tensor_batch["extra_info"]):
+        for _ in range(n_samples):
+            terminal_args.append((messages, extra_info["docker_image"]))
     
-    trajectories = []
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        results = list(executor.map(create_terminal, traj_infos))
-        trajectories.extend(results)
+    terminals = []
+    max_workers = min(os.cpu_count(), 24)
     
-    return trajectories
- 
-GLOBAL_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=64, thread_name_prefix="docker")
+    with tqdm(total=len(terminal_args), desc="Creating terminals") as pbar:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(create_terminal, *args): args for args in terminal_args}
+            
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    terminals.append(result)
+                except Exception as e:
+                    print(f"Failed to create terminal: {e}")
+                    traceback.print_exc()
+                
+                pbar.update(1)
+    
+    return terminals
 
-async def stop_terminal(term: Terminal, timeout: int = 0):
+GLOBAL_POOL = ThreadPoolExecutor(max_workers=64, thread_name_prefix="docker")
+
+async def stop_terminal(term: Terminal, timeout: int = 1):
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(GLOBAL_POOL, lambda: term.stop(timeout=timeout))
 
@@ -95,21 +83,27 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             kwargs["n"] = 1
             kwargs["temperature"] = 0
 
-        kwargs.update(sampling_params)
-        print(f"[{self.__class__.__name__}] generate_sequences sampling params: {kwargs}")
-        
         trajectories = create_terminals(batch, kwargs["n"])
         old_n = kwargs["n"]
         kwargs["n"] = 1
         kwargs["stop"] = ["</terminal>"]
 
-        async def callback(completions: ChatCompletion, info: dict[str, Any], exception: Exception):
+        kwargs.update(sampling_params)
+        print(f"[{self.__class__.__name__}] generate_sequences sampling params: {kwargs}")
+
+        async def callback(completions: ChatCompletion, info: dict[str, Any], exception: Exception | None):
             index, messages, terminal, batch_messages = (
                 info["index"],
                 info["messages"].copy(),
                 info["terminal"],
                 info["batch_messages"]
             )
+            
+            if exception is not None:
+                print(f"Callback exception: {exception}")
+                batch_messages[index] = messages
+                await stop_terminal(terminal)
+                return
 
             response = completions.choices[0]
             messages.append({
@@ -120,18 +114,23 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             if response.finish_reason == "length":
                 batch_messages[index] = messages
                 await stop_terminal(terminal)
+                # print("finish_reason=='length' :", messages)
                 return
             
             action = extract_action(response.message.content)
             if action is None:
                 batch_messages[index] = messages
                 await stop_terminal(terminal)
+                # print("<|im_end|> :", messages)
                 return
             
+            print("*************** </terminal> :", messages)
             messages.append({
                 "role": "user",
                 "content": f"<output>{await call_terminal(terminal, action, timeout=1)}</output>"
             })
+            print("*************** response :", messages[-1])
+            # TODO: is there a way to detect that we don't overstep the model context len? maybe we look at the exception arg
             await self.submit_chat_completions(
                 callback=callback,
                 callback_additional_info={
@@ -139,7 +138,10 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
                     "messages": messages,
                     "terminal": terminal,
                     "batch_messages": batch_messages,
-                }
+                },
+                model=self.model_name,
+                messages=messages,
+                **kwargs,
             )
 
         tasks = []
@@ -165,7 +167,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
         print(f"[{self.__class__.__name__}] generate_sequences done")
         
         return self._postprocess(batch, batch_messages, old_n)
-           
+
     def _postprocess(
         self, batch: DataProto, batch_messages: list[list[dict[str, str]]], n: int
     ) -> DataProto:
@@ -179,7 +181,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             self.tokenizer.apply_chat_template(prompt, add_generation_prompt=True, tokenize=False)
             for prompt in batch.non_tensor_batch["raw_prompt"] 
         ]
-        assert len(batch_messages) == len(prompts)
+        assert len(batch_messages) == len(prompts) * n
         
         sequences = [
             self.tokenizer.apply_chat_template(messages, add_generation_prompt=False, tokenize=False)
@@ -193,6 +195,8 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
         if n > 1:
             prompts["input_ids"] = prompts["input_ids"].repeat_interleave(n, dim=0)
             prompts["attention_mask"] = prompts["attention_mask"].repeat_interleave(n, dim=0)
+        
+        # TODO: add assistant message masking here
 
         input_ids = torch.cat([prompts["input_ids"], responses["input_ids"]], dim=1)
         attention_mask = torch.cat([prompts["attention_mask"], responses["attention_mask"]], dim=1)

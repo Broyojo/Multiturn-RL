@@ -619,12 +619,12 @@ class RayPPOTrainer:
             if "multi_modal_inputs" in test_batch.non_tensor_batch.keys():
                 test_gen_batch = test_batch.pop(
                     batch_keys=["input_ids", "attention_mask", "position_ids"],
-                    non_tensor_batch_keys=["raw_prompt_ids", "multi_modal_data", "multi_modal_inputs"],
+                    non_tensor_batch_keys=["raw_prompt_ids", "multi_modal_data", "multi_modal_inputs", "extra_info"],
                 )
             else:
                 test_gen_batch = test_batch.pop(
                     batch_keys=["input_ids", "attention_mask", "position_ids"],
-                    non_tensor_batch_keys=["raw_prompt_ids"] + ["raw_prompt"] if self.async_rollout_mode else [],
+                    non_tensor_batch_keys=["raw_prompt_ids"] + ["raw_prompt", "extra_info"] if self.async_rollout_mode else [],
                 )
 
             test_gen_batch.meta_info = {
@@ -971,12 +971,12 @@ class RayPPOTrainer:
                 if "multi_modal_inputs" in batch.non_tensor_batch.keys():
                     gen_batch = batch.pop(
                         batch_keys=["input_ids", "attention_mask", "position_ids"],
-                        non_tensor_batch_keys=["raw_prompt_ids", "multi_modal_data", "multi_modal_inputs"],
+                        non_tensor_batch_keys=["raw_prompt_ids", "multi_modal_data", "multi_modal_inputs", "extra_info"],
                     )
                 else:
                     gen_batch = batch.pop(
                         batch_keys=["input_ids", "attention_mask", "position_ids"],
-                        non_tensor_batch_keys=["raw_prompt_ids"] + ["raw_prompt"] if self.async_rollout_mode else [],
+                        non_tensor_batch_keys=["raw_prompt_ids"] + ["raw_prompt", "extra_info"] if self.async_rollout_mode else [],
                     )
 
                 is_last_step = self.global_steps >= self.total_training_steps
