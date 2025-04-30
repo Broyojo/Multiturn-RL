@@ -19,4 +19,20 @@ $ ./train.sh
   - [ ] ToRL dataset?
 - [ ] Run experiments
 
+
+
+## Data
+*1. Math
+   - NuminaMath
+   - AIME
+   - MATH
+   - etc.
+2. Coding
+   - TACO
+*3. **SWE**
+   - **SWE-Bench**
+
+
+
+Notes:
 - should we do regular RL training before integrating with terminal? seems like it will take a while before the model starts using the terminal

@@ -1,7 +1,5 @@
 import asyncio
-import os
-import traceback
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List
 
 import torch
@@ -10,7 +8,6 @@ from omegaconf import DictConfig
 from openai.types.chat.chat_completion import ChatCompletion
 from tensordict import TensorDict
 from terminal import Terminal
-from tqdm import tqdm
 
 from verl.protocol import DataProto
 from verl.workers.rollout.async_server import ChatCompletionScheduler
@@ -21,41 +18,7 @@ def make_trajectory(messages, docker_image):
     return {"messages": list(messages), "terminal": terminal}
 
 
-def create_terminals(batch, n_samples):
-    terminal_args = []
-    for messages, extra_info in zip(
-        batch.non_tensor_batch["raw_prompt"], batch.non_tensor_batch["extra_info"]
-    ):
-        for _ in range(n_samples):
-            terminal_args.append((messages, extra_info["docker_image"]))
-
-    terminals = []
-    max_workers = min(os.cpu_count(), 24)
-
-    with tqdm(total=len(terminal_args), desc="Creating terminals") as pbar:
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(make_trajectory, *args): args for args in terminal_args
-            }
-
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    terminals.append(result)
-                except Exception as e:
-                    print(f"Failed to create terminal: {e}")
-                    traceback.print_exc()
-
-                pbar.update(1)
-
-    return terminals
-
-
 GLOBAL_POOL = ThreadPoolExecutor(max_workers=64, thread_name_prefix="docker")
-
-# async def stop_terminal(term: Terminal, timeout: int = 1):
-#     loop = asyncio.get_running_loop()
-#     return await loop.run_in_executor(GLOBAL_POOL, lambda: term.stop(timeout=timeout))
 
 
 async def call_terminal(term: Terminal, input: str, timeout=1):
@@ -99,8 +62,6 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             kwargs["n"] = 1
             kwargs["temperature"] = 0
 
-        # trajectories = create_terminals(batch, kwargs["n"])
-
         trajectories = Parallel(n_jobs=-1, backend="threading")(
             delayed(make_trajectory)(messages, extra_info["docker_image"])
             for messages, extra_info in zip(
@@ -132,9 +93,9 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             )
 
             if exception is not None:
+                # this may be from the terminal output overstepping the context length. in this case, we just return the messages but don't include the terminal output
                 print(f"Callback exception: {exception}")
-                batch_messages[index] = messages
-                # await stop_terminal(terminal)
+                batch_messages[index] = messages[:-1]
                 return
 
             response = completions.choices[0]
@@ -144,15 +105,11 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
 
             if response.finish_reason == "length":
                 batch_messages[index] = messages
-                # await stop_terminal(terminal)
-                # print("finish_reason=='length' :", messages)
                 return
 
             action = extract_action(response.message.content)
             if action is None:
                 batch_messages[index] = messages
-                # await stop_terminal(terminal)
-                # print("<|im_end|> :", messages)
                 return
 
             messages[-1]["content"] += "</terminal>"
@@ -161,7 +118,6 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             output = await call_terminal(terminal, action, timeout=1)
             messages.append({"role": "user", "content": f"<output>{output}</output>"})
             print("*************** response :", messages[-1])
-            # TODO: is there a way to detect that we don't overstep the model context len? maybe we look at the exception arg
             await self.submit_chat_completions(
                 callback=callback,
                 callback_additional_info={
@@ -196,6 +152,8 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             )
         await asyncio.gather(*tasks)
         print(f"[{self.__class__.__name__}] generate_sequences done")
+
+        # TODO: save patches for SWE-Bench tasks here to file
 
         Parallel(n_jobs=-1, backend="threading")(
             delayed(lambda t: t["terminal"].stop())(traj) for traj in trajectories

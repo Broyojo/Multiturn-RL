@@ -30,6 +30,10 @@ class Terminal:
         )
         self.ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
+        self.commit_hash = self.container.exec_run("git rev-parse HEAD").output.decode(
+            "utf-8"
+        )
+
     def _strip_ansi(self, text):
         return self.ansi_escape.sub("", text)
 
@@ -86,6 +90,9 @@ class Terminal:
 
     def __exit__(self, exc_type, exc_val, traceback):
         self.stop()
+
+    def get_patch(self):
+        pass
 
 
 # client = docker.from_env()

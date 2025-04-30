@@ -188,7 +188,6 @@ class TaskRunner:
 
         compute_score = get_custom_reward_fn(config)
         reward_fn = RewardManager(
-            config,
             tokenizer,
             num_examine=0,
             compute_score=compute_score,
@@ -196,7 +195,6 @@ class TaskRunner:
             **config.reward_model.get("reward_kwargs", {}),
         )
         val_reward_fn = RewardManager(
-            config,
             tokenizer,
             num_examine=1,
             compute_score=compute_score,
