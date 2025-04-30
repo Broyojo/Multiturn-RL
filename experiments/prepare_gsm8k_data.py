@@ -65,26 +65,26 @@ if __name__ == "__main__":
                 "prompt": [
                     {
                         "role": "system",
-                        "content": "You have access to an integrated terminal. To use it, type your input inside <terminal></terminal> delimeters. You should use it to help you solve the math problem. This is a generic stdin input, so if you want to run a full command, you need to include a newline at the end of it. Also, you can type arbitrary control codes like ^C, ^D, ^[, ^[OP, ^[[A, etc.",
+                        "content": """You have access to an integrated terminal TTY tool to help you. To use it, type your input inside <terminal></terminal> delimeters. For example, <terminal>python -c "print(3+4)"\n</terminal>. This is a generic stdin input, so if you want to run a full command, you need to include a newline at the end of it. Also, you can type arbitrary control codes like ^C, ^D, ^[, ^[OP, ^[[A, etc. Make sure you put your final numerical answer in <answer></answer> brackets!""",
                     },
-                    {
-                        "role": "user",
-                        "content": "Janet's ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?",
-                    },
-                    {
-                        "role": "assistant",
-                        "content": 'To solve this problem, I need to calculate how many eggs Janet sells after consuming some herself.\n\n<terminal>python -c "print(16 - 3 - 4)"\n</terminal>',
-                    },
-                    {"role": "user", "content": "<output>9\n~$ </output>"},
-                    {
-                        "role": "assistant",
-                        "content": 'Janet has 9 eggs left to sell each day. Now I\'ll calculate her daily earnings at $2 per egg.\n\n<terminal>python -c "print(9 * 2)"\n</terminal>',
-                    },
-                    {"role": "user", "content": "<output>18\n~$ </output>"},
-                    {
-                        "role": "assistant",
-                        "content": "Janet makes $18 per day at the farmers' market from selling her duck eggs. #### 18",
-                    },
+                    # {
+                    #     "role": "user",
+                    #     "content": "Janet's ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?",
+                    # },
+                    # {
+                    #     "role": "assistant",
+                    #     "content": 'To solve this problem, I need to calculate how many eggs Janet sells after consuming some herself.\n\n<terminal>python -c "print(16 - 3 - 4)"\n</terminal>',
+                    # },
+                    # {"role": "user", "content": "<output>9\n~$ </output>"},
+                    # {
+                    #     "role": "assistant",
+                    #     "content": 'Janet has 9 eggs left to sell each day. Now I\'ll calculate her daily earnings at $2 per egg.\n\n<terminal>python -c "print(9 * 2)"\n</terminal>',
+                    # },
+                    # {"role": "user", "content": "<output>18\n~$ </output>"},
+                    # {
+                    #     "role": "assistant",
+                    #     "content": "Janet makes $18 per day at the farmers' market from selling her duck eggs. #### 18",
+                    # },
                     {"role": "user", "content": question},
                 ],
                 "ability": "math",

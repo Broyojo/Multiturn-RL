@@ -13,7 +13,10 @@ $ ./train.sh
 ```
 
 ## TODO
-1. Make custom chat scheduler for terminal environment
-2. Create custom reward functions for various tasks (SWE-Bench, TACO, math, etc.)
-3. Collect data
-4. Run experiments
+- [X] Make custom chat scheduler for terminal environment
+- [ ] Create custom reward functions for various tasks (SWE-Bench, TACO, math, etc.)
+- [ ] Collect data
+  - [ ] ToRL dataset?
+- [ ] Run experiments
+
+- should we do regular RL training before integrating with terminal? seems like it will take a while before the model starts using the terminal
