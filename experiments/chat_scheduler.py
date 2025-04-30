@@ -155,6 +155,8 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
                 # print("<|im_end|> :", messages)
                 return
 
+            messages[-1]["content"] += "</terminal>"
+
             print("*************** </terminal> :", messages)
             output = await call_terminal(terminal, action, timeout=1)
             messages.append({"role": "user", "content": f"<output>{output}</output>"})

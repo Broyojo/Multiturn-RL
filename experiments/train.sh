@@ -42,6 +42,7 @@ python3 -m main \
     custom_reward_function.path=reward.py \
     algorithm.use_kl_in_reward=False \
     trainer.critic_warmup=0 \
+    trainer.rollout_data_dir=./rollouts \
     trainer.logger=['console','wandb'] \
     trainer.project_name='multiturn-rl' \
     trainer.experiment_name='qwen2.5-0.5b-gsm8k-terminal' \

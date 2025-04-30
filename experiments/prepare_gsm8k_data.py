@@ -47,7 +47,9 @@ if __name__ == "__main__":
     train_dataset = dataset["train"]
     test_dataset = dataset["test"]
 
-    instruction_following = 'Let\'s think step by step and output the final answer after "####".'
+    instruction_following = (
+        'Let\'s think step by step and output the final answer after "####".'
+    )
 
     # add a row to each data item that represents a unique id
     def make_map_fn(split):
@@ -63,36 +65,27 @@ if __name__ == "__main__":
                 "prompt": [
                     {
                         "role": "system",
-                        "content": "You have access to an integrated terminal. To use it, type your input inside <terminal></terminal> delimeters. You should use it to help you solve the math problem."
+                        "content": "You have access to an integrated terminal. To use it, type your input inside <terminal></terminal> delimeters. You should use it to help you solve the math problem. This is a generic stdin input, so if you want to run a full command, you need to include a newline at the end of it. Also, you can type arbitrary control codes like ^C, ^D, ^[, ^[OP, ^[[A, etc.",
                     },
                     {
                         "role": "user",
-                        "content": "Janet's ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?"
-                    },
-                    {
-                        "role": "assistant", 
-                        "content": "To solve this problem, I need to calculate how many eggs Janet sells after consuming some herself.\n\n<terminal>echo $((16 - 3 - 4))</terminal>"
-                    },
-                    {
-                        "role": "user",
-                        "content": "<output>9\n~$ </output>"
+                        "content": "Janet's ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?",
                     },
                     {
                         "role": "assistant",
-                        "content": "Janet has 9 eggs left to sell each day. Now I'll calculate her daily earnings at $2 per egg.\n\n<terminal>echo $((9 * 2))</terminal>",
+                        "content": 'To solve this problem, I need to calculate how many eggs Janet sells after consuming some herself.\n\n<terminal>python -c "print(16 - 3 - 4)"\n</terminal>',
                     },
-                    {
-                        "role": "user",
-                        "content": "<output>18\n~$ </output>"
-                    },
+                    {"role": "user", "content": "<output>9\n~$ </output>"},
                     {
                         "role": "assistant",
-                        "content": "Janet makes $18 per day at the farmers' market from selling her duck eggs. #### 18"
+                        "content": 'Janet has 9 eggs left to sell each day. Now I\'ll calculate her daily earnings at $2 per egg.\n\n<terminal>python -c "print(9 * 2)"\n</terminal>',
                     },
+                    {"role": "user", "content": "<output>18\n~$ </output>"},
                     {
-                        "role": "user",
-                        "content": question
-                    }
+                        "role": "assistant",
+                        "content": "Janet makes $18 per day at the farmers' market from selling her duck eggs. #### 18",
+                    },
+                    {"role": "user", "content": question},
                 ],
                 "ability": "math",
                 "reward_model": {"style": "rule", "ground_truth": solution},
@@ -101,7 +94,7 @@ if __name__ == "__main__":
                     "index": idx,
                     "answer": answer_raw,
                     "question": question_raw,
-                    "docker_image": random.choice(["python:3.12", "ubuntu:latest"])
+                    "docker_image": random.choice(["python:3.12", "ubuntu:latest"]),
                 },
             }
             return data
