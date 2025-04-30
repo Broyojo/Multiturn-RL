@@ -48,7 +48,7 @@ if __name__ == "__main__":
     test_dataset = dataset["test"]
 
     instruction_following = (
-        'Let\'s think step by step and output the final answer after "####".'
+        "Let's think step by step and output the final answer after in \\boxed{}."
     )
 
     # add a row to each data item that represents a unique id
@@ -65,7 +65,7 @@ if __name__ == "__main__":
                 "prompt": [
                     {
                         "role": "system",
-                        "content": """You have access to an integrated terminal TTY tool to help you. To use it, type your input inside <terminal></terminal> delimeters. For example, <terminal>python -c "print(3+4)"\n</terminal>. This is a generic stdin input, so if you want to run a full command, you need to include a newline at the end of it. Also, you can type arbitrary control codes like ^C, ^D, ^[, ^[OP, ^[[A, etc. Make sure you put your final numerical answer in <answer></answer> brackets!""",
+                        "content": """You have access to an integrated terminal TTY tool to help you. To use it, type your input inside <terminal> ... </terminal> delimeters. For example, <terminal>python -c "print(3+4)"\n</terminal>. This is a generic stdin input, so if you want to run a full command, you need to include a newline at the end of it. Also, you can type arbitrary control codes like ^C, ^D, ^[, ^[OP, ^[[A, etc. Make sure you put your final response to the user in <answer></answer> brackets!""",
                     },
                     # {
                     #     "role": "user",

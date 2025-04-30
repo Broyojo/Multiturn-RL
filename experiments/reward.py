@@ -5,20 +5,23 @@ todo:
 - for all the swebench problems in the batch, we run the swebench evaluation script on them and extract the reward
 """
 
-
-# def compute_score(
-#     data_source: str, solution_str: str, ground_truth: str, extra_info=None
-# ) -> float:
-#     gold = parse(ground_truth)
-#     answer = parse(
-#         solution_str,
-#         extraction_config=[LatexExtractionConfig(boxed_match_priority=0)],
-#     )
-#     return 1 if verify(gold, answer) else 0
-
 import re
 
 import pytest
+
+
+def compute_score(
+    data_source: str, solution_str: str, ground_truth: str, extra_info=None
+) -> float:
+    print(solution_str)
+    print("=" * 100)
+    return 0
+    # gold = parse(ground_truth)
+    # answer = parse(
+    #     solution_str,
+    #     extraction_config=[LatexExtractionConfig(boxed_match_priority=0)],
+    # )
+    # return 1 if verify(gold, answer) else 0
 
 
 def format_reward(solution_str: str):
@@ -48,27 +51,27 @@ def format_reward(solution_str: str):
     return 1
 
 
-def compute_score(
-    data_sources: list[str],
-    solution_strs: list[str],
-    ground_truths: list[str],
-    extra_infos: list[dict],
-    **reward_kwargs,
-):
-    # math: math500, aime25, aime24 ToRL
-    # coding: TACO
-    # swebench: swebench
+# def compute_score(
+#     data_sources: list[str],
+#     solution_strs: list[str],
+#     ground_truths: list[str],
+#     extra_infos: list[dict],
+#     **reward_kwargs,
+# ):
+#     # math: math500, aime25, aime24 ToRL
+#     # coding: TACO
+#     # swebench: swebench
 
-    """
-    format reward:
+#     """
+#     format reward:
 
-    <|im_start|>assistant
-    <think>here are some thoughts</think><terminal>this is a terminal command</terminal><|im_end|>
-    <|im_start|>user
-    <output>...</output><|im_end|>
-    <|im_start|>assistant
-    <think>ok seems like pretty interesting</think><answer>the answer is this \\boxed{thing}</answer><|im_end|>
-    """
+#     <|im_start|>assistant
+#     <think>here are some thoughts</think><terminal>this is a terminal command</terminal><|im_end|>
+#     <|im_start|>user
+#     <output>...</output><|im_end|>
+#     <|im_start|>assistant
+#     <think>ok seems like pretty interesting</think><answer>the answer is this \\boxed{thing}</answer><|im_end|>
+#     """
 
 
 @pytest.mark.parametrize(
@@ -109,6 +112,11 @@ def compute_score(
         ),
         ("", 0),
         ("<|im_start|>user\n<output>hi</output><|im_end|>", 0),
+        (
+            "<|im_start|>assistant\n<think>t1</think><think>t2</think><|im_end|>\n"
+            "<|im_start|>assistant\n<think>t2</think><answer>res</answer><|im_end|>",
+            0,
+        ),
     ],
     ids=[
         "single_valid_answer",
@@ -120,6 +128,7 @@ def compute_score(
         "non_last_missing_terminal",
         "empty_transcript",
         "other_roles_only",
+        "double_think",
     ],
 )
 def test_format_reward(transcript, expected):

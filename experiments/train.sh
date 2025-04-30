@@ -7,15 +7,15 @@ export VLLM_USE_V1=1
 
 python3 -m main \
     algorithm.adv_estimator=grpo \
-    data.train_files=data/torl/train.parquet \
-    data.val_files=data/torl/test.parquet \
+    data.train_files=data/gsm8k/train.parquet \
+    data.val_files=data/gsm8k/test.parquet \
     data.return_raw_chat=True \
     data.train_batch_size=8 \
     data.max_prompt_length=2048 \
     data.max_response_length=1024 \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
-    actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B-Instruct \
+    actor_rollout_ref.model.path=Qwen/Qwen3-0.6B \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.ppo_mini_batch_size=2 \
@@ -43,7 +43,7 @@ python3 -m main \
     algorithm.use_kl_in_reward=False \
     trainer.critic_warmup=0 \
     trainer.rollout_data_dir=./rollouts \
-    trainer.logger=['console','wandb'] \
+    trainer.logger=['console'] \
     trainer.project_name='multiturn-rl' \
     trainer.experiment_name='qwen3-0.6b-gsm8k-terminal' \
     trainer.val_before_train=False \
