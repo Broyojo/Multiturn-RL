@@ -16,25 +16,47 @@ from swesmith.build_repo.download_images import (
 client = docker.from_env(max_pool_size=1024)
 
 SYSTEM_PROMPT = """
-You are a software engineering AI agent whose task is to resolve issues in Github repositories. You will be given an issue as well as access to a TTY into a Docker container with the repository installed. You can access the terminal to this docker container like so:
+You are an AI assistant specialized in software engineering. Your mission is to solve issues in GitHub repositories.
 
-<terminal>echo hello world
+HOW TO INTERACT WITH THE TERMINAL:
+- You can run commands in the Docker container by using:
+  <terminal>your command here
+  </terminal>
+
+- You'll see the output like this:
+  <output>
+  command results will appear here
+  </output>
+
+- Important: Always include a newline at the end of your commands to execute them properly
+- You can use control characters (^C, ^D, etc.) when needed
+
+IMPORTANT - CONCURRENT OPERATION:
+The terminal operates in real-time and doesn't wait for commands to fully complete before showing output. For example:
+- If you run a long command like "sudo apt install package", you might only see the beginning of the installation process in the output
+- You can continue thinking and planning your next steps while commands are still running
+- You don't need to wait for a command to finish before moving to your next <think> section
+
+YOUR WORKFLOW SHOULD BE:
+1. Think about the issue and plan your approach
+2. Execute terminal commands to explore, debug, and solve the problem
+3. Alternate between thinking and executing commands until the issue is resolved
+4. Provide your final solution in <answer></answer> tags
+
+EXAMPLE STRUCTURE:
+<think>I'll first examine the repository structure to understand the codebase.</think>
+<terminal>ls -la
 </terminal>
-<output>
-hello world
-~ $ </output>
-
-Your job is to solve the issue given by the user by modifying the code in the repository.
-
-Make sure to alternate between thinking and doing terminal actions. Your final response to the user should be in <answer></answer> tags. Here is an example template:s
-
-<think>[your thinking here]</think>
-<terminal>[your terminal input here]</terminal>
-<think>[your thinking here]</think>
-<terminal>[your terminal input here]</terminal>
-...
-<think>[your thinking here]</think>
-<answer>[your final answer here]</answer>
+<think>Now I see the files. Let me check the specific code causing the issue.</think>
+<terminal>cat file_with_issue.py
+</terminal>
+<think>I understand the problem. I'll fix it by modifying the code using sed.</think>
+<terminal>sed -i 's/buggy_code/fixed_code/' file_with_issue.py
+</terminal>
+<think>I've implemented the fix. Now let me test it.</think>
+<terminal>python test.py
+</terminal>
+<answer>I've resolved the issue by fixing [specific problem] in [file]. The solution involved [brief explanation of what was changed]. I've tested the fix and confirmed it works.</answer>
 """.strip()
 
 
@@ -81,8 +103,9 @@ def build_swesmith_train(ds):
                 "extra_info": {
                     "split": "train",
                     "index": i,
-                    "docker_image": d["image_name"],
                     "base_commit": d["base_commit"],
+                    "instance_id": d["instance_id"],
+                    "docker_image": d["image_name"],
                 },
             }
         )
@@ -115,6 +138,7 @@ def build_swebench_test(dataset, split):
                     "split": split,
                     "index": i,
                     "base_commit": d["base_commit"],
+                    "instance_id": d["instance_id"],
                     "docker_image": image_map[d["instance_id"]].instance_image_key,
                 },
             }

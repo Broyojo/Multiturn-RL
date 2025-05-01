@@ -7,8 +7,8 @@ export VLLM_USE_V1=1
 
 python3 -m main \
     algorithm.adv_estimator=grpo \
-    data.train_files=data/gsm8k/train.parquet \
-    data.val_files=data/gsm8k/test.parquet \
+    data.train_files=data/swebench/train.parquet \
+    data.val_files=data/swebench/test.parquet \
     data.return_raw_chat=True \
     data.train_batch_size=8 \
     data.max_prompt_length=2048 \

@@ -3,13 +3,13 @@ import select
 import time
 
 import docker
-from swebench.harness.constants import DOCKER_WORKDIR
+from swebench.harness.constants import DOCKER_USER, DOCKER_WORKDIR, UTF8
 
 CLIENT = docker.from_env(max_pool_size=1024)
 
 
 class Terminal:
-    def __init__(self, image: str = "ubuntu:latest"):
+    def __init__(self, image: str = "ubuntu:latest", commit: str | None = None):
         self.container = CLIENT.containers.run(
             image,
             command="/bin/bash",
@@ -18,7 +18,19 @@ class Terminal:
             stdin_open=True,
             remove=True,
             platform="linux/x86_64",
+            user=DOCKER_USER,
+            mem_limit="10g",
+            working_dir=DOCKER_WORKDIR,
         )
+        if commit is not None:
+            self.container.exec_run(
+                "git fetch", workdir=DOCKER_WORKDIR, user=DOCKER_USER
+            )
+            val = self.container.exec_run(
+                f"git checkout {commit}", workdir=DOCKER_WORKDIR, user=DOCKER_USER
+            )
+            if val.exit_code != 0:
+                print(f"CHECKOUT FAILED: {val.output.decode(UTF8)}")
         self.socket = self.container.attach_socket(
             params={"stdin": 1, "stdout": 1, "stderr": 1, "stream": 1}
         )
@@ -84,7 +96,8 @@ class Terminal:
     def get_patch(self, base_commit: str):
         return (
             self.container.exec_run(
-                f"bash -c 'cd {DOCKER_WORKDIR} && git diff {base_commit}'"
+                f"bash -c 'cd {DOCKER_WORKDIR} && git add -A && git diff {base_commit}'",
+                user=DOCKER_USER,
             )
             .output.decode("utf-8")
             .strip()
@@ -92,7 +105,9 @@ class Terminal:
 
 
 def interact():
-    with Terminal() as terminal:
+    with Terminal(
+        image="swesmith.x86_64.john-kurkowski__tldextract.3d1bf184"
+    ) as terminal:
         while True:
             user_input = input("input: ")
             if user_input.startswith("get_patch("):

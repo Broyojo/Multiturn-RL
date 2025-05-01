@@ -1,4 +1,5 @@
 import asyncio
+import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List
 
@@ -6,6 +7,7 @@ import torch
 from joblib import Parallel, delayed
 from omegaconf import DictConfig
 from openai.types.chat.chat_completion import ChatCompletion
+from swebench.harness.constants import KEY_INSTANCE_ID, KEY_MODEL, KEY_PREDICTION
 from tensordict import TensorDict
 from terminal import Terminal
 
@@ -13,9 +15,11 @@ from verl.protocol import DataProto
 from verl.workers.rollout.async_server import ChatCompletionScheduler
 
 
-def make_trajectory(messages, docker_image):
-    terminal = Terminal(image=docker_image).__enter__()
-    return {"messages": list(messages), "terminal": terminal}
+def make_trajectory(messages, extra_info):
+    terminal = Terminal(
+        image=extra_info["docker_image"], commit=extra_info["base_commit"]
+    ).__enter__()
+    return {"messages": list(messages), "terminal": terminal, "extra_info": extra_info}
 
 
 GLOBAL_POOL = ThreadPoolExecutor(max_workers=64, thread_name_prefix="docker")
@@ -63,7 +67,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             kwargs["temperature"] = 0
 
         trajectories = Parallel(n_jobs=-1, backend="threading")(
-            delayed(make_trajectory)(messages, extra_info["docker_image"])
+            delayed(make_trajectory)(messages, extra_info)
             for messages, extra_info in zip(
                 batch.non_tensor_batch["raw_prompt"],
                 batch.non_tensor_batch["extra_info"],
@@ -153,7 +157,20 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
         await asyncio.gather(*tasks)
         print(f"[{self.__class__.__name__}] generate_sequences done")
 
-        # TODO: save patches for SWE-Bench tasks here to file
+        def make_patch(t):
+            return {
+                KEY_INSTANCE_ID: t["extra_info"]["instance_id"],
+                KEY_MODEL: self.model_name,
+                KEY_PREDICTION: t["terminal"].get_patch(t["extra_info"]["base_commit"]),
+            }
+
+        patches = Parallel(n_jobs=-1, backend="threading")(
+            delayed(make_patch)(traj) for traj in trajectories
+        )
+
+        with open("predictions.jsonl", "w") as f:
+            for patch in patches:
+                f.write(json.dumps(patch) + "\n")
 
         Parallel(n_jobs=-1, backend="threading")(
             delayed(lambda t: t["terminal"].stop())(traj) for traj in trajectories
