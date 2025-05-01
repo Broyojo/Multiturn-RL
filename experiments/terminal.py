@@ -9,7 +9,7 @@ CLIENT = docker.from_env(max_pool_size=1024)
 
 
 class Terminal:
-    def __init__(self, image: str = "python:3.12"):
+    def __init__(self, image: str = "ubuntu:latest"):
         self.container = CLIENT.containers.run(
             image,
             command="/bin/bash",
@@ -17,6 +17,7 @@ class Terminal:
             tty=True,
             stdin_open=True,
             remove=True,
+            platform="linux/x86_64",
         )
         self.socket = self.container.attach_socket(
             params={"stdin": 1, "stdout": 1, "stderr": 1, "stream": 1}
@@ -81,6 +82,7 @@ class Terminal:
         self.stop()
 
     def get_patch(self, base_commit: str):
+        # TODO: add error handling here
         return (
             self.container.exec_run(
                 f"bash -c 'cd {DOCKER_WORKDIR} && git diff {base_commit}'"

@@ -1,0 +1,62 @@
+[build-system]
+requires = ['setuptools>=42']
+build-backend = 'setuptools.build_meta'
+
+[project]
+name = "swesmith"
+version = "0.0.0"
+authors = [
+    {name = "John Yang", email = "byjohnyang@gmail.com"}
+]
+description = "A package for generating LLM based agent trajectories for software engineering"
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = ["nlp", "benchmark", "code"]
+license = {file = "LICENSE"}
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3 :: Only",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "astor",
+    "datasets",
+    "docker",
+    "ghapi",
+    "jupyter",
+    "libcst",
+    "litellm",
+    "matplotlib",
+    "mkdocs-material",
+    "mkdocs-glightbox",
+    "mkdocs-include-markdown-plugin",
+    "mkdocstrings[python]>=0.18",
+    "mike",
+    "modal",
+    "openai",
+    "pre-commit",
+    "python-dotenv",
+    "rich",
+    "sglang",
+    "sparklines",
+    "swebench",
+    "tiktoken",
+    "tqdm",
+    "unidiff",
+    "textual",
+]
+
+[tool.setuptools]
+packages = ["swesmith"]
+include-package-data = true
+
+[project.urls]
+"Documentation" = "https://github.com/john-b-yang/swe-smith"
+"Bug Reports" = "https://github.com/john-b-yang/swe-smith/issues"
+"Source Code" = "https://github.com/john-b-yang/swe-smith"
+"Website" = "https://swebench.com"
+
+[tool.ruff]
+exclude = ["notebooks"]

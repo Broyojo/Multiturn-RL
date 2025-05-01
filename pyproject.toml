@@ -10,6 +10,7 @@ dependencies = [
     "omegaconf==2.3.0",
     "math-verify[antlr4-13-2]>=0.3.3",
     "swebench",
+    "swesmith",
 ]
 name = "multiturn-rl"
 version = "0.1.0"
@@ -20,6 +21,7 @@ requires-python = ">=3.12"
 [tool.uv.sources]
 verl = { path = "verl", editable = true }
 swebench = { path = "SWE-bench", editable = true }
+swesmith = { path = "SWE-smith", editable = true }
 flashinfer-python = { index = "flashinfer" }
 
 [[tool.uv.index]]
