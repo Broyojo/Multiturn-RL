@@ -1,5 +1,6 @@
 {
     "python.analysis.extraPaths": [
-        "./SWE-bench"
+        "./SWE-bench",
+        "./SWE-smith"
     ]
 }
