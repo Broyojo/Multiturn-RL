@@ -82,7 +82,6 @@ class Terminal:
         self.stop()
 
     def get_patch(self, base_commit: str):
-        # TODO: add error handling here
         return (
             self.container.exec_run(
                 f"bash -c 'cd {DOCKER_WORKDIR} && git diff {base_commit}'"

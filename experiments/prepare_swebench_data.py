@@ -141,5 +141,22 @@ def main():
     test_dataset.to_parquet(os.path.join(OUT, "test.parquet"))
 
 
+"""
+some notes:
+
+swesmith/swebench expects the following format:
+
+jsonl file, with each line like this:
+{
+    KEY_INSTANCE_ID: <instance id>
+    KEY_MODEL: <model>
+    KEY_PREDICTION: <patch>
+}
+
+this should be saved in a jsonl file after the trajectory if finished
+
+then, the reward function either runs the swebench evaluation script or the swesmith evaluation script depending on if it is training or testing
+"""
+
 if __name__ == "__main__":
     main()
