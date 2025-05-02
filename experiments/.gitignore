@@ -5,4 +5,5 @@ checkpoints
 *.png
 rollouts
 logs
-predictions.jsonl
+predictions
+rollout.html

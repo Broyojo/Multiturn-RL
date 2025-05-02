@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List
 
@@ -38,6 +40,38 @@ def extract_action(response):
     if last_closing > last_opening or last_opening == -1:
         return None
     return response[last_opening + 10 :]
+
+
+def save_predictions(patches, n):
+    """
+    need to save several prediction files (N of them) since all instance ids must be unique.
+    so, if we have GRPO, we generate n trajectories for each problem, so we need to have N predictinos for each instance
+    maybe run the swesmith evaluator in parallel across each of the N prediction files
+    """
+
+    # Group patches by instance_id
+    patches_by_instance = defaultdict(list)
+    for patch in patches:
+        instance_id = patch[KEY_INSTANCE_ID]
+        patches_by_instance[instance_id].append(patch)
+
+    # Create predictions directory if it doesn't exist
+    os.makedirs("predictions", exist_ok=True)
+
+    # Stratify the predictions into old_n files
+    for file_idx in range(n):
+        predictions_for_file = []
+
+        # Add one prediction per instance_id to this file
+        for instance_id, instance_patches in patches_by_instance.items():
+            if file_idx < len(instance_patches):
+                predictions_for_file.append(instance_patches[file_idx])
+
+        # Write this file's predictions
+        output_path = f"predictions/predictions_{file_idx}.jsonl"
+        with open(output_path, "w") as f:
+            for patch in predictions_for_file:
+                f.write(json.dumps(patch) + "\n")
 
 
 class TerminalChatCompletionScheduler(ChatCompletionScheduler):
@@ -119,6 +153,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             messages[-1]["content"] += "</terminal>"
 
             print("*************** </terminal> :", messages)
+            # await call_terminal(terminal, "echo hi > test\n", timeout=1)
             output = await call_terminal(terminal, action, timeout=1)
             messages.append({"role": "user", "content": f"<output>{output}</output>"})
             print("*************** response :", messages[-1])
@@ -168,9 +203,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             delayed(make_patch)(traj) for traj in trajectories
         )
 
-        with open("predictions.jsonl", "w") as f:
-            for patch in patches:
-                f.write(json.dumps(patch) + "\n")
+        save_predictions(patches, old_n)
 
         Parallel(n_jobs=-1, backend="threading")(
             delayed(lambda t: t["terminal"].stop())(traj) for traj in trajectories

@@ -16,7 +16,6 @@ class Terminal:
             detach=True,
             tty=True,
             stdin_open=True,
-            remove=True,
             platform="linux/x86_64",
             user=DOCKER_USER,
             mem_limit="10g",
@@ -31,6 +30,18 @@ class Terminal:
             )
             if val.exit_code != 0:
                 print(f"CHECKOUT FAILED: {val.output.decode(UTF8)}")
+
+            # allow git commits
+            self.container.exec_run(
+                'git config --global user.email "you@example.com"',
+                workdir=DOCKER_WORKDIR,
+                user=DOCKER_USER,
+            )
+            self.container.exec_run(
+                'git config --global user.name "Your Name"',
+                workdir=DOCKER_WORKDIR,
+                user=DOCKER_USER,
+            )
         self.socket = self.container.attach_socket(
             params={"stdin": 1, "stdout": 1, "stderr": 1, "stream": 1}
         )
@@ -96,14 +107,17 @@ class Terminal:
 
     def get_patch(self, base_commit: str):
         return self.container.exec_run(
-            f"bash -c 'cd {DOCKER_WORKDIR} && git add -A && git diff {base_commit}'",
+            # we cannot do `git add -A` here since that may add unadded files
+            # instead, have the agent add new files to git itself
+            f"bash -c 'cd {DOCKER_WORKDIR} && git diff {base_commit}'",
             user=DOCKER_USER,
         ).output.decode("utf-8")
 
 
 def interact():
     with Terminal(
-        image="swesmith.x86_64.john-kurkowski__tldextract.3d1bf184"
+        image="swesmith.x86_64.john-kurkowski__tldextract.3d1bf184",
+        commit="a2e2dab2e2f3ab56ed60f6af0abe78dafbc81cb3",
     ) as terminal:
         while True:
             user_input = input("input: ")
