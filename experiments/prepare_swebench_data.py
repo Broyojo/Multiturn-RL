@@ -88,9 +88,13 @@ def download_swesmith_images():
 
 
 def build_swesmith_train(ds):
-    success, _ = download_swesmith_images()
+    success, _ = (
+        download_swesmith_images()
+    )  # TODO: filter for successful images downloaded
     verl_ds = []
+    swesmith_ds = []
     for i, d in enumerate(ds):
+        swesmith_ds.append(d)
         verl_ds.append(
             {
                 "data_source": "swesmith",
@@ -109,6 +113,9 @@ def build_swesmith_train(ds):
                 },
             }
         )
+    Dataset.from_list(swesmith_ds).to_json(
+        "./data/swebench/swesmith.jsonl", batch_size=len(swesmith_ds)
+    )
     return Dataset.from_list(verl_ds)
 
 

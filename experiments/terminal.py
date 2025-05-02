@@ -89,19 +89,16 @@ class Terminal:
 
     def stop(self, timeout=0):
         self.container.stop(timeout=timeout)
+        self.container.remove(force=True)
 
     def __exit__(self, exc_type, exc_val, traceback):
         self.stop()
 
     def get_patch(self, base_commit: str):
-        return (
-            self.container.exec_run(
-                f"bash -c 'cd {DOCKER_WORKDIR} && git add -A && git diff {base_commit}'",
-                user=DOCKER_USER,
-            )
-            .output.decode("utf-8")
-            .strip()
-        )
+        return self.container.exec_run(
+            f"bash -c 'cd {DOCKER_WORKDIR} && git add -A && git diff {base_commit}'",
+            user=DOCKER_USER,
+        ).output.decode("utf-8")
 
 
 def interact():
