@@ -22,12 +22,8 @@ class Terminal:
             working_dir=DOCKER_WORKDIR,
         )
         if commit is not None:
-            self.container.exec_run(
-                "git fetch", workdir=DOCKER_WORKDIR, user=DOCKER_USER
-            )
-            val = self.container.exec_run(
-                f"git checkout {commit}", workdir=DOCKER_WORKDIR, user=DOCKER_USER
-            )
+            self.container.exec_run("git fetch", workdir=DOCKER_WORKDIR, user=DOCKER_USER)
+            val = self.container.exec_run(f"git checkout {commit}", workdir=DOCKER_WORKDIR, user=DOCKER_USER)
             if val.exit_code != 0:
                 print(f"CHECKOUT FAILED: {val.output.decode(UTF8)}")
 
@@ -42,9 +38,7 @@ class Terminal:
                 workdir=DOCKER_WORKDIR,
                 user=DOCKER_USER,
             )
-        self.socket = self.container.attach_socket(
-            params={"stdin": 1, "stdout": 1, "stderr": 1, "stream": 1}
-        )
+        self.socket = self.container.attach_socket(params={"stdin": 1, "stdout": 1, "stderr": 1, "stream": 1})
         self.ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
     def _strip_ansi(self, text):

@@ -97,17 +97,13 @@ def download_swesmith_images():
         new_name = f"{r['name'].replace('_1776_', '__')}:{TAG}"
         client.images.get(f"{SWEFT_ORG}/{r['name']}:{TAG}").tag(new_name)
 
-    success, failure = run_threadpool(
-        download, [(r,) for r in repos], max_workers=os.cpu_count()
-    )
+    success, failure = run_threadpool(download, [(r,) for r in repos], max_workers=os.cpu_count())
 
     return success, failure
 
 
 def build_swesmith_train(ds):
-    success, _ = (
-        download_swesmith_images()
-    )  # TODO: filter for successful images downloaded
+    success, _ = download_swesmith_images()  # TODO: filter for successful images downloaded
     verl_ds = []
     swesmith_ds = []
     for i, d in enumerate(ds):
@@ -130,16 +126,12 @@ def build_swesmith_train(ds):
                 },
             }
         )
-    Dataset.from_list(swesmith_ds).to_json(
-        "./data/swebench/swesmith.jsonl", batch_size=len(swesmith_ds)
-    )
+    Dataset.from_list(swesmith_ds).to_json("./data/swebench/swesmith.jsonl", batch_size=len(swesmith_ds))
     return Dataset.from_list(verl_ds)
 
 
 def build_swebench_test(dataset, split):
-    successful, _ = build_instance_images(
-        client=client, dataset=dataset, max_workers=8, tag=LATEST
-    )
+    successful, _ = build_instance_images(client=client, dataset=dataset, max_workers=8, tag=LATEST)
 
     image_map = {t[0].instance_id: t[0] for t in successful}
 
@@ -176,14 +168,10 @@ def main():
     os.makedirs(OUT, exist_ok=True)
 
     train_dataset = load_dataset("SWE-bench/SWE-smith", split="train")
-    train_dataset = train_dataset.filter(
-        lambda e: len(e["problem_statement"]) > 0, num_proc=16
-    )
+    train_dataset = train_dataset.filter(lambda e: len(e["problem_statement"]) > 0, num_proc=16)
     train_dataset = build_swesmith_train(train_dataset)
 
-    test_dataset = build_swebench_test(
-        load_swebench_dataset("princeton-nlp/SWE-bench", "test"), split="test"
-    )
+    test_dataset = build_swebench_test(load_swebench_dataset("princeton-nlp/SWE-bench", "test"), split="test")
 
     train_dataset.to_parquet(os.path.join(OUT, "train.parquet"))
     test_dataset.to_parquet(os.path.join(OUT, "test.parquet"))

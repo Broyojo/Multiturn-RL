@@ -3,7 +3,7 @@ import json
 import os
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List
+from typing import Any
 
 import torch
 from joblib import Parallel, delayed
@@ -18,9 +18,7 @@ from verl.workers.rollout.async_server import ChatCompletionScheduler
 
 
 def make_trajectory(messages, extra_info):
-    terminal = Terminal(
-        image=extra_info["docker_image"], commit=extra_info["base_commit"]
-    )
+    terminal = Terminal(image=extra_info["docker_image"], commit=extra_info["base_commit"])
     return {"messages": list(messages), "terminal": terminal, "extra_info": extra_info}
 
 
@@ -29,9 +27,7 @@ GLOBAL_POOL = ThreadPoolExecutor(max_workers=64, thread_name_prefix="docker")
 
 async def call_terminal(term: Terminal, input: str, timeout=1):
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        GLOBAL_POOL, lambda: term(input=input, timeout=timeout)
-    )
+    return await loop.run_in_executor(GLOBAL_POOL, lambda: term(input=input, timeout=timeout))
 
 
 def extract_action(response):
@@ -84,9 +80,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
     ):
         super().__init__(config, model_path, server_addresses, max_cache_size)
 
-    async def generate_sequences(
-        self, batch: DataProto, **sampling_params
-    ) -> DataProto:
+    async def generate_sequences(self, batch: DataProto, **sampling_params) -> DataProto:
         kwargs = dict(
             n=self.config.n,
             max_completion_tokens=self.config.response_length,
@@ -105,6 +99,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             for messages, extra_info in zip(
                 batch.non_tensor_batch["raw_prompt"],
                 batch.non_tensor_batch["extra_info"],
+                strict=False,
             )
             for _ in range(kwargs["n"])
         )
@@ -114,9 +109,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
         kwargs["stop"] = ["</terminal>"]
 
         kwargs.update(sampling_params)
-        print(
-            f"[{self.__class__.__name__}] generate_sequences sampling params: {kwargs}"
-        )
+        print(f"[{self.__class__.__name__}] generate_sequences sampling params: {kwargs}")
 
         async def callback(
             completions: ChatCompletion,
@@ -131,15 +124,14 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             )
 
             if exception is not None:
-                # this may be from the terminal output overstepping the context length. in this case, we just return the messages but don't include the terminal output
+                # this may be from the terminal output overstepping the context length.
+                # in this case, we just return the messages but don't include the terminal output
                 print(f"Callback exception: {exception}")
                 batch_messages[index] = messages[:-1]
                 return
 
             response = completions.choices[0]
-            messages.append(
-                {"role": response.message.role, "content": response.message.content}
-            )
+            messages.append({"role": response.message.role, "content": response.message.content})
 
             if response.finish_reason == "length":
                 batch_messages[index] = messages
@@ -204,17 +196,13 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             t["terminal"].stop()
             return patch
 
-        patches = Parallel(n_jobs=-1, backend="threading")(
-            delayed(make_patch)(traj) for traj in trajectories
-        )
+        patches = Parallel(n_jobs=-1, backend="threading")(delayed(make_patch)(traj) for traj in trajectories)
 
         save_predictions(patches, old_n)
 
         return self._postprocess(batch, batch_messages, old_n)
 
-    def _postprocess(
-        self, batch: DataProto, batch_messages: list[list[dict[str, str]]], n: int
-    ) -> DataProto:
+    def _postprocess(self, batch: DataProto, batch_messages: list[list[dict[str, str]]], n: int) -> DataProto:
         # prompts: left pad
         # responses: right pad
         # input_ids: prompt + response
@@ -222,42 +210,28 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
         # position_ids:   [0,0,0,0,0,1,2,3, | 4,5,6,7,8,9,10,11]
 
         prompts = [
-            self.tokenizer.apply_chat_template(
-                prompt, add_generation_prompt=True, tokenize=False
-            )
+            self.tokenizer.apply_chat_template(prompt, add_generation_prompt=True, tokenize=False)
             for prompt in batch.non_tensor_batch["raw_prompt"]
         ]
         assert len(batch_messages) == len(prompts) * n
 
         sequences = [
-            self.tokenizer.apply_chat_template(
-                messages, add_generation_prompt=False, tokenize=False
-            )
+            self.tokenizer.apply_chat_template(messages, add_generation_prompt=False, tokenize=False)
             for messages in batch_messages
         ]
 
-        responses = [
-            sequence[len(prompts[i // n]) :] for i, sequence in enumerate(sequences)
-        ]
+        responses = [sequence[len(prompts[i // n]) :] for i, sequence in enumerate(sequences)]
 
-        prompts = self.tokenizer(
-            prompts, return_tensors="pt", padding="longest", padding_side="left"
-        )
-        responses = self.tokenizer(
-            responses, return_tensors="pt", padding="longest", padding_side="right"
-        )
+        prompts = self.tokenizer(prompts, return_tensors="pt", padding="longest", padding_side="left")
+        responses = self.tokenizer(responses, return_tensors="pt", padding="longest", padding_side="right")
         if n > 1:
             prompts["input_ids"] = prompts["input_ids"].repeat_interleave(n, dim=0)
-            prompts["attention_mask"] = prompts["attention_mask"].repeat_interleave(
-                n, dim=0
-            )
+            prompts["attention_mask"] = prompts["attention_mask"].repeat_interleave(n, dim=0)
 
         # TODO: add assistant message masking here
 
         input_ids = torch.cat([prompts["input_ids"], responses["input_ids"]], dim=1)
-        attention_mask = torch.cat(
-            [prompts["attention_mask"], responses["attention_mask"]], dim=1
-        )
+        attention_mask = torch.cat([prompts["attention_mask"], responses["attention_mask"]], dim=1)
         position_ids = (attention_mask.cumsum(dim=1) - 1) * attention_mask
 
         batch = TensorDict(
@@ -284,14 +258,12 @@ class NaiveChatCompletionScheduler(ChatCompletionScheduler):
         self,
         config: DictConfig,
         model_path: str,
-        server_addresses: List[str],
+        server_addresses: list[str],
         max_cache_size: int = 10000,
     ):
         super().__init__(config, model_path, server_addresses, max_cache_size)
 
-    async def generate_sequences(
-        self, batch: DataProto, **sampling_params
-    ) -> DataProto:
+    async def generate_sequences(self, batch: DataProto, **sampling_params) -> DataProto:
         kwargs = dict(
             n=self.config.n,
             max_completion_tokens=self.config.response_length,
@@ -306,13 +278,9 @@ class NaiveChatCompletionScheduler(ChatCompletionScheduler):
             kwargs["temperature"] = 0
 
         kwargs.update(sampling_params)
-        print(
-            f"[NaiveChatCompletionScheduler] generate_sequences sampling params: {kwargs}"
-        )
+        print(f"[NaiveChatCompletionScheduler] generate_sequences sampling params: {kwargs}")
 
-        async def callback(
-            completions: ChatCompletion, info: Dict[str, Any], exception: Exception
-        ):
+        async def callback(completions: ChatCompletion, info: dict[str, Any], exception: Exception):
             conversation, batch_conversations, batch_index = (
                 info["conversation"],
                 info["batch_conversations"],
@@ -322,9 +290,7 @@ class NaiveChatCompletionScheduler(ChatCompletionScheduler):
             conversations = []
             for choice in completions.choices:
                 chat = conversation.copy()
-                chat.append(
-                    {"role": choice.message.role, "content": choice.message.content}
-                )
+                chat.append({"role": choice.message.role, "content": choice.message.content})
                 conversations.append(chat)
             batch_conversations[batch_index] = conversations
 
@@ -333,9 +299,7 @@ class NaiveChatCompletionScheduler(ChatCompletionScheduler):
             # await self.submit_chat_completions(callback2, ...)
 
         tasks, batch_conversations = [], [None] * len(batch)
-        for batch_index, conversation in enumerate(
-            batch.non_tensor_batch["raw_prompt"]
-        ):
+        for batch_index, conversation in enumerate(batch.non_tensor_batch["raw_prompt"]):
             # raw_prompt: [{"role": "user", "content": ""}, ["role": "assistant", "content"], ...]
             tasks.append(
                 asyncio.create_task(
@@ -360,7 +324,7 @@ class NaiveChatCompletionScheduler(ChatCompletionScheduler):
     def _postprocess(
         self,
         batch: DataProto,
-        batch_conversations: List[List[List[Dict[str, str]]]],
+        batch_conversations: list[list[list[dict[str, str]]]],
         n: int,
     ) -> DataProto:
         # NOTE: consistent with batch version of generate_sequences in vllm_rollout_spmd.py
@@ -372,51 +336,33 @@ class NaiveChatCompletionScheduler(ChatCompletionScheduler):
 
         # prompts: [prompt] from input dataset
         prompts = [
-            self.tokenizer.apply_chat_template(
-                prompt, add_generation_prompt=True, tokenize=False
-            )
+            self.tokenizer.apply_chat_template(prompt, add_generation_prompt=True, tokenize=False)
             for prompt in batch.non_tensor_batch["raw_prompt"]
         ]
 
         # flatten batch_conversations if n > 1
         assert len(batch_conversations) == len(prompts)
-        batch_conversations = [
-            conversation
-            for conversations in batch_conversations
-            for conversation in conversations
-        ]
+        batch_conversations = [conversation for conversations in batch_conversations for conversation in conversations]
         assert len(batch_conversations) == len(prompts) * n
 
         # sequences: [prompt + response]
         sequences = [
-            self.tokenizer.apply_chat_template(
-                conversation, add_generation_prompt=False, tokenize=False
-            )
+            self.tokenizer.apply_chat_template(conversation, add_generation_prompt=False, tokenize=False)
             for conversation in batch_conversations
         ]
 
         # responses: [response]
         # TODO: mask out tools calling tokens?
-        responses = [
-            sequence[len(prompts[i // n]) :] for i, sequence in enumerate(sequences)
-        ]
+        responses = [sequence[len(prompts[i // n]) :] for i, sequence in enumerate(sequences)]
 
-        prompts = self.tokenizer(
-            prompts, return_tensors="pt", padding="longest", padding_side="left"
-        )
-        responses = self.tokenizer(
-            responses, return_tensors="pt", padding="longest", padding_side="right"
-        )
+        prompts = self.tokenizer(prompts, return_tensors="pt", padding="longest", padding_side="left")
+        responses = self.tokenizer(responses, return_tensors="pt", padding="longest", padding_side="right")
         if n > 1:
             prompts["input_ids"] = prompts["input_ids"].repeat_interleave(n, dim=0)
-            prompts["attention_mask"] = prompts["attention_mask"].repeat_interleave(
-                n, dim=0
-            )
+            prompts["attention_mask"] = prompts["attention_mask"].repeat_interleave(n, dim=0)
 
         input_ids = torch.cat([prompts["input_ids"], responses["input_ids"]], dim=1)
-        attention_mask = torch.cat(
-            [prompts["attention_mask"], responses["attention_mask"]], dim=1
-        )
+        attention_mask = torch.cat([prompts["attention_mask"], responses["attention_mask"]], dim=1)
         position_ids = (attention_mask.cumsum(dim=1) - 1) * attention_mask
 
         batch = TensorDict(

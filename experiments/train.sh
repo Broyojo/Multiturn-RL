@@ -47,7 +47,7 @@ python3 -m main \
     trainer.rollout_data_dir=./rollouts \
     trainer.logger=['console','wandb'] \
     trainer.project_name='multiturn-rl' \
-    trainer.experiment_name='qwen2.5-0.5b-gsm8k-terminal-format' \
+    trainer.experiment_name='qwen2.5-0.5b-swebench-terminal-format' \
     trainer.val_before_train=False \
     trainer.n_gpus_per_node=1 \
     trainer.nnodes=1 \

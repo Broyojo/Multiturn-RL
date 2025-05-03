@@ -30,3 +30,41 @@ url = "https://flashinfer.ai/whl/cu124/torch2.6/"
 
 [dependency-groups]
 dev = ["pytest>=8.3.5"]
+
+# -------------------------------
+# tool.ruff - Linting configuration (coped from veRL linting config)
+# -------------------------------
+[tool.ruff]
+# Note: While the formatter will attempt to format lines such that they remain within the line-length,
+# it isn't a hard upper bound, and formatted lines may exceed the line-length.
+line-length = 120
+
+[tool.ruff.lint]
+isort = { known-first-party = ["verl"] }
+# c.f. https://github.com/vllm-project/vllm/blob/ce8d6b75fc0586045df75ee1568a5b5f9957251b/pyproject.toml
+select = [
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # isort
+    "I",
+    "G",
+]
+ignore = [
+    # star imports
+    "F405",
+    "F403",
+    # lambda expression assignment
+    "E731",
+    # Loop control variable not used within loop body
+    "B007",
+    # f-string format
+    "UP032",
+    # Can remove once 3.10+ is the minimum Python version
+    "UP007",
+]

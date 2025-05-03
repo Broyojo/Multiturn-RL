@@ -18,6 +18,7 @@ This trainer supports model-agonistic model initialization with huggingface
 
 import json
 import os
+import re
 import uuid
 from collections import defaultdict
 from contextlib import contextmanager
@@ -25,7 +26,6 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from pprint import pprint
-from typing import Dict, Type
 
 import numpy as np
 import ray
@@ -65,7 +65,7 @@ from verl.utils.torch_functional import masked_mean
 from verl.utils.tracking import ValidationGenerationsLogger
 from verl.workers.rollout.async_server import AsyncLLMServerManager
 
-WorkerType = Type[Worker]
+WorkerType = type[Worker]
 
 
 class Role(Enum):
@@ -258,7 +258,7 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_re
 
 
 @contextmanager
-def _timer(name: str, timing_raw: Dict[str, float]):
+def _timer(name: str, timing_raw: dict[str, float]):
     with Timer(name=name, logger=None) as timer:
         yield
     if name not in timing_raw:
@@ -576,7 +576,7 @@ class RayPPOTrainer:
         import numpy as np
 
         # Create tuples of (input, output, score) and sort by input text
-        samples = list(zip(inputs, outputs, scores))
+        samples = list(zip(inputs, outputs, scores, strict=False))
         samples.sort(key=lambda x: x[0])  # Sort by input text
 
         # Use fixed random seed for deterministic shuffling
@@ -624,7 +624,9 @@ class RayPPOTrainer:
             else:
                 test_gen_batch = test_batch.pop(
                     batch_keys=["input_ids", "attention_mask", "position_ids"],
-                    non_tensor_batch_keys=["raw_prompt_ids"] + ["raw_prompt", "extra_info"] if self.async_rollout_mode else [],
+                    non_tensor_batch_keys=["raw_prompt_ids"] + ["raw_prompt", "extra_info"]
+                    if self.async_rollout_mode
+                    else [],
                 )
 
             test_gen_batch.meta_info = {
@@ -971,14 +973,21 @@ class RayPPOTrainer:
                 if "multi_modal_inputs" in batch.non_tensor_batch.keys():
                     gen_batch = batch.pop(
                         batch_keys=["input_ids", "attention_mask", "position_ids"],
-                        non_tensor_batch_keys=["raw_prompt_ids", "multi_modal_data", "multi_modal_inputs", "extra_info"],
+                        non_tensor_batch_keys=[
+                            "raw_prompt_ids",
+                            "multi_modal_data",
+                            "multi_modal_inputs",
+                            "extra_info",
+                        ],
                     )
                 else:
                     gen_batch = batch.pop(
                         batch_keys=["input_ids", "attention_mask", "position_ids"],
-                        non_tensor_batch_keys=["raw_prompt_ids"] + ["raw_prompt", "extra_info"] if self.async_rollout_mode else [],
+                        non_tensor_batch_keys=["raw_prompt_ids"] + ["raw_prompt", "extra_info"]
+                        if self.async_rollout_mode
+                        else [],
                     )
-                
+
                 batch.non_tensor_batch["extra_info"] = gen_batch.non_tensor_batch["extra_info"]
 
                 is_last_step = self.global_steps >= self.total_training_steps
@@ -992,6 +1001,25 @@ class RayPPOTrainer:
                             self.async_rollout_manager.wake_up()
                             gen_batch_output = self.async_rollout_manager.generate_sequences(gen_batch)
                             self.async_rollout_manager.sleep()
+
+                    # log number of terminal calls
+                    terminal_counts = []
+                    for response in gen_batch_output.batch["responses"]:
+                        response_text = "<|im_start|>assistant\n" + self.tokenizer.decode(
+                            response, skip_special_tokens=False
+                        )
+                        blocks = re.findall(r"<\|im_start\|>assistant(.*?)<\|im_end\|>", response_text, re.S)
+                        terminal_count = 0
+                        for block in blocks:
+                            terminal_blocks = re.findall(r"<terminal>.*?</terminal>", block.strip(), re.S)
+                            terminal_count += len(terminal_blocks)
+                        terminal_counts.append(terminal_count)
+                    metrics["gen/avg_terminal_count"] = (
+                        sum(terminal_counts) / len(terminal_counts) if terminal_counts else 0
+                    )
+                    metrics["gen/max_terminal_count"] = max(terminal_counts) if terminal_counts else 0
+                    metrics["gen/min_terminal_count"] = min(terminal_counts) if terminal_counts else 0
+                    metrics["gen/total_terminal_count"] = sum(terminal_counts)
 
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                         with _timer("gen_max", timing_raw):
