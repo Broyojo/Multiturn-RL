@@ -100,7 +100,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             kwargs["n"] = 1
             kwargs["temperature"] = 0
 
-        trajectories = Parallel(n_jobs=-1, backend="threading", timeout=120)(
+        trajectories = Parallel(n_jobs=-1, backend="threading")(
             delayed(make_trajectory)(messages, extra_info)
             for messages, extra_info in zip(
                 batch.non_tensor_batch["raw_prompt"],
@@ -153,7 +153,12 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             messages[-1]["content"] += "</terminal>"
 
             output = await call_terminal(terminal, action, timeout=1)
-            messages.append({"role": "user", "content": f"<output>{output}</output>"})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"<terminal_output>{output}</terminal_output>",
+                }
+            )
             print("*************** <terminal> call :", messages)
             await self.submit_chat_completions(
                 callback=callback,
@@ -191,21 +196,19 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
         print(f"[{self.__class__.__name__}] generate_sequences done")
 
         def make_patch(t):
-            return {
+            patch = {
                 KEY_INSTANCE_ID: t["extra_info"]["instance_id"],
                 KEY_MODEL: self.model_name,
                 KEY_PREDICTION: t["terminal"].get_patch(t["extra_info"]["base_commit"]),
             }
+            t["terminal"].stop()
+            return patch
 
-        patches = Parallel(n_jobs=-1, backend="threading", timeout=120)(
+        patches = Parallel(n_jobs=-1, backend="threading")(
             delayed(make_patch)(traj) for traj in trajectories
         )
 
         save_predictions(patches, old_n)
-
-        Parallel(n_jobs=-1, backend="threading", timeout=120)(
-            delayed(lambda t: t["terminal"].stop())(traj) for traj in trajectories
-        )
 
         return self._postprocess(batch, batch_messages, old_n)
 

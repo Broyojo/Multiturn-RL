@@ -109,12 +109,17 @@ class Terminal:
         self.container.remove(force=True)
 
     def get_patch(self, base_commit: str):
-        return self.container.exec_run(
-            # we cannot do `git add -A` here since that may add unadded files
-            # instead, have the agent add new files to git itself
-            f"bash -c 'cd {DOCKER_WORKDIR} && git diff {base_commit}'",
-            user=DOCKER_USER,
-        ).output.decode("utf-8")
+        try:
+            return self.container.exec_run(
+                # we cannot do `git add -A` here since that may add unadded files
+                # instead, have the agent add new files to git itself
+                f"bash -c 'cd {DOCKER_WORKDIR} && git diff {base_commit}'",
+                user=DOCKER_USER,
+            ).output.decode("utf-8")
+        except docker.errors.APIError as e:
+            if "is not running" in str(e):
+                return ""
+            raise
 
 
 def interact():

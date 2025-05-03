@@ -6,6 +6,7 @@ import sys
 def create_html_from_jsonl(input_file, output_file):
     """
     Read a JSONL file and create an HTML file displaying the input and output.
+    Handles malformed tags in the output more robustly.
 
     Args:
         input_file: Path to the JSONL file
@@ -97,6 +98,13 @@ def create_html_from_jsonl(input_file, output_file):
                     font-size: 0.8em;
                     color: #7f8c8d;
                 }
+                .error-tag {
+                    background-color: #ffecec;
+                    color: #c94a4a;
+                    padding: 2px 4px;
+                    border-radius: 3px;
+                    font-size: 0.85em;
+                }
             </style>
         </head>
         <body>
@@ -126,29 +134,17 @@ def create_html_from_jsonl(input_file, output_file):
                     system_content = input_data
                     user_content = ""
 
-                # Format the output data - process tags like <think>, <terminal>, etc.
+                # Format output to highlight "assistant" and "user" sections
                 formatted_output = output_data
-                # Replace <think> blocks
+
+                # If output contains 'assistant\n' or 'user\n', format those specially
+                formatted_output = html.escape(formatted_output)
                 formatted_output = formatted_output.replace(
-                    "<think>", '<div class="think-block"><strong>Think:</strong> '
+                    "assistant\n", "<strong>assistant</strong>\n"
                 )
-                formatted_output = formatted_output.replace("</think>", "</div>")
-                # Replace <terminal> blocks
                 formatted_output = formatted_output.replace(
-                    "<terminal>",
-                    '<div class="terminal-block"><strong>Terminal:</strong>\n',
+                    "user\n", "<strong>user</strong>\n"
                 )
-                formatted_output = formatted_output.replace("</terminal>", "</div>")
-                # Replace <output> blocks
-                formatted_output = formatted_output.replace(
-                    "<output>", '<div class="output-block"><strong>Output:</strong>\n'
-                )
-                formatted_output = formatted_output.replace("</output>", "</div>")
-                # Replace <answer> blocks
-                formatted_output = formatted_output.replace(
-                    "<answer>", '<div class="answer-block"><strong>Answer:</strong> '
-                )
-                formatted_output = formatted_output.replace("</answer>", "</div>")
 
                 # Create HTML for this sample
                 html_content.append(f"""
@@ -172,7 +168,7 @@ def create_html_from_jsonl(input_file, output_file):
                     
                     <div class="section">
                         <div class="section-title">Output:</div>
-                        <div>{formatted_output}</div>
+                        <div class="code-block">{formatted_output}</div>
                     </div>
                 </div>
                 """)
@@ -194,6 +190,9 @@ def create_html_from_jsonl(input_file, output_file):
         # Write the HTML file
         with open(output_file, "w", encoding="utf-8") as out_file:
             out_file.write("\n".join(html_content))
+
+
+# We no longer need these functions since we're displaying the output verbatim
 
 
 if __name__ == "__main__":
