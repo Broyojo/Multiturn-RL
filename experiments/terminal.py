@@ -95,15 +95,9 @@ class Terminal:
         output = self._strip_ansi(output)
         return output
 
-    def __enter__(self):
-        return self
-
     def stop(self, timeout=0):
         self.container.stop(timeout=timeout)
         self.container.remove(force=True)
-
-    def __exit__(self, exc_type, exc_val, traceback):
-        self.stop()
 
     def get_patch(self, base_commit: str):
         return self.container.exec_run(

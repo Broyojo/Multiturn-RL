@@ -20,7 +20,7 @@ from verl.workers.rollout.async_server import ChatCompletionScheduler
 def make_trajectory(messages, extra_info):
     terminal = Terminal(
         image=extra_info["docker_image"], commit=extra_info["base_commit"]
-    ).__enter__()
+    )
     return {"messages": list(messages), "terminal": terminal, "extra_info": extra_info}
 
 
@@ -100,7 +100,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             kwargs["n"] = 1
             kwargs["temperature"] = 0
 
-        trajectories = Parallel(n_jobs=-1, backend="threading")(
+        trajectories = Parallel(n_jobs=-1, backend="threading", timeout=120)(
             delayed(make_trajectory)(messages, extra_info)
             for messages, extra_info in zip(
                 batch.non_tensor_batch["raw_prompt"],
@@ -152,11 +152,9 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
 
             messages[-1]["content"] += "</terminal>"
 
-            print("*************** </terminal> :", messages)
-            # await call_terminal(terminal, "echo hi > test\n", timeout=1)
             output = await call_terminal(terminal, action, timeout=1)
             messages.append({"role": "user", "content": f"<output>{output}</output>"})
-            print("*************** response :", messages[-1])
+            print("*************** <terminal> call :", messages)
             await self.submit_chat_completions(
                 callback=callback,
                 callback_additional_info={
@@ -199,13 +197,13 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
                 KEY_PREDICTION: t["terminal"].get_patch(t["extra_info"]["base_commit"]),
             }
 
-        patches = Parallel(n_jobs=-1, backend="threading")(
+        patches = Parallel(n_jobs=-1, backend="threading", timeout=120)(
             delayed(make_patch)(traj) for traj in trajectories
         )
 
         save_predictions(patches, old_n)
 
-        Parallel(n_jobs=-1, backend="threading")(
+        Parallel(n_jobs=-1, backend="threading", timeout=120)(
             delayed(lambda t: t["terminal"].stop())(traj) for traj in trajectories
         )
 

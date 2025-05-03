@@ -47,7 +47,7 @@ class RewardManager:
             valid_len = valid_response_lengths[i]
             valid_response_ids = response_ids[i][:valid_len]
             response_str = self.tokenizer.decode(
-                valid_response_ids, skip_special_tokens=True
+                valid_response_ids, skip_special_tokens=False
             )
             responses_str.append(response_str)
 

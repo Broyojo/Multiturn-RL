@@ -15,7 +15,7 @@ python3 -m main \
     data.max_response_length=1024 \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
-    actor_rollout_ref.model.path=Qwen/Qwen3-0.6B \
+    actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B-Instruct \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.ppo_mini_batch_size=2 \
@@ -33,8 +33,10 @@ python3 -m main \
     actor_rollout_ref.rollout.mode=async \
     actor_rollout_ref.rollout.chat_scheduler=chat_scheduler.TerminalChatCompletionScheduler \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.6 \
-    actor_rollout_ref.rollout.n=5 \
+    actor_rollout_ref.rollout.n=10 \
     actor_rollout_ref.rollout.temperature=1.0 \
+    actor_rollout_ref.rollout.top_p=1.0 \
+    actor_rollout_ref.rollout.top_k=-1 \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
@@ -43,9 +45,9 @@ python3 -m main \
     algorithm.use_kl_in_reward=False \
     trainer.critic_warmup=0 \
     trainer.rollout_data_dir=./rollouts \
-    trainer.logger=['console'] \
+    trainer.logger=['console','wandb'] \
     trainer.project_name='multiturn-rl' \
-    trainer.experiment_name='qwen3-0.6b-gsm8k-terminal' \
+    trainer.experiment_name='qwen2.5-0.5b-gsm8k-terminal-format' \
     trainer.val_before_train=False \
     trainer.n_gpus_per_node=1 \
     trainer.nnodes=1 \

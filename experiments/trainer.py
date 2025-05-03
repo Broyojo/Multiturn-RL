@@ -978,6 +978,8 @@ class RayPPOTrainer:
                         batch_keys=["input_ids", "attention_mask", "position_ids"],
                         non_tensor_batch_keys=["raw_prompt_ids"] + ["raw_prompt", "extra_info"] if self.async_rollout_mode else [],
                     )
+                
+                batch.non_tensor_batch["extra_info"] = gen_batch.non_tensor_batch["extra_info"]
 
                 is_last_step = self.global_steps >= self.total_training_steps
 

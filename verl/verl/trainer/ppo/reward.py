@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import traceback
 
 import ray
 
@@ -99,6 +100,7 @@ def compute_reward(data: DataProto, reward_fn):
         reward_tensor = reward_result["reward_tensor"]
         reward_extra_infos_dict = reward_result["reward_extra_info"]
     except Exception as e:
+        print(traceback.format_exc())
         print(f"Error in reward_fn: {e}")
         reward_tensor = reward_fn(data)
         reward_extra_infos_dict = {}

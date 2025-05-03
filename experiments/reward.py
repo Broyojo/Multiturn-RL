@@ -5,25 +5,34 @@ todo:
 - for all the swebench problems in the batch, we run the swebench evaluation script on them and extract the reward
 """
 
+import json
+import os
 import re
 
 import pytest
-
-# def compute_score(
-#     data_source: str, solution_str: str, ground_truth: str, extra_info=None
-# ) -> float:
-#     print(solution_str)
-#     print("=" * 100)
-#     return 0
-# gold = parse(ground_truth)
-# answer = parse(
-#     solution_str,
-#     extraction_config=[LatexExtractionConfig(boxed_match_priority=0)],
-# )
-# return 1 if verify(gold, answer) else 0
+import swesmith.harness.eval
+from joblib import Parallel, delayed
 
 
 def format_reward(solution_str: str):
+    """
+    format:
+    <|im_start|>assistant
+    <think>here are some thoughts</think><terminal>this is a terminal command</terminal><|im_end|>
+    <|im_start|>user
+    <output>...</output><|im_end|>
+    <|im_start|>assistant
+    <think>ok seems like pretty interesting</think><answer>the answer is this \\boxed{thing}</answer><|im_end|>
+
+    steps:
+    1. check format
+    2. run swebench evaluator on patch files
+    3. get scores
+    4. return scores
+    """
+
+    solution_str = "<|im_start|>assistant\n" + solution_str
+
     # extract the inner content of each assistant block
     blocks = re.findall(r"<\|im_start\|>assistant(.*?)<\|im_end\|>", solution_str, re.S)
     if not blocks:
@@ -50,6 +59,69 @@ def format_reward(solution_str: str):
     return 1
 
 
+def normalize_score(report):
+    # Calculate raw score
+    solved = len(report["tests_status"]["FAIL_TO_PASS"]["success"])
+    regressed = len(report["tests_status"]["PASS_TO_PASS"]["failure"])
+    raw_score = solved - regressed
+
+    # Get total tests for normalization
+    total_fail_tests = len(report["tests_status"]["FAIL_TO_PASS"]["success"]) + len(
+        report["tests_status"]["FAIL_TO_PASS"]["failure"]
+    )
+    total_pass_tests = len(report["tests_status"]["PASS_TO_PASS"]["success"]) + len(
+        report["tests_status"]["PASS_TO_PASS"]["failure"]
+    )
+
+    # Theoretical minimum and maximum scores
+    min_score = -total_pass_tests  # Worst case: all previously passing tests now fail
+    max_score = total_fail_tests  # Best case: all previously failing tests now pass
+
+    # Handle edge case
+    if min_score == max_score:
+        return 0.0  # Default to 0 if no test cases to evaluate
+
+    # Normalize to [0, 1]
+    normalized_score = (raw_score - min_score) / (max_score - min_score)
+
+    return normalized_score
+
+
+def swesmith_reward(step, index, max_workers=4):
+    # print(f"swesmith_reward({step}, {index})")
+    run_id = f"step{step}-n{index}"
+    predictions = f"./predictions/predictions_{index}.jsonl"
+    swesmith.harness.eval.main(
+        dataset_path="./data/swebench/swesmith.jsonl",
+        predictions_path=predictions,
+        run_id=run_id,
+        max_workers=max_workers,
+    )
+    swe_scores = []
+    with open(predictions, "r") as f:
+        instances = [json.loads(line)["instance_id"] for line in f.readlines()]
+    for instance in instances:
+        if "report.json" not in os.listdir(
+            f"./logs/run_evaluation/{run_id}/{instance})"
+        ):
+            swe_scores.append(0)
+            continue
+
+        with open(f"./logs/run_evaluation/{run_id}/{instance}/report.json", "r") as f:
+            report = json.load(f)
+
+        if "tests_status" not in report:
+            swe_scores.append(0)
+            continue
+
+        score = normalize_score(report)
+        swe_scores.append(score)
+    return swe_scores
+
+
+step = 0
+
+
 def compute_score(
     data_sources: list[str],
     solution_strs: list[str],
@@ -57,28 +129,44 @@ def compute_score(
     extra_infos: list[dict],
     **reward_kwargs,
 ):
-    # swebench: swebench
+    global step
 
-    """
-    format reward:
+    n = len(os.listdir("./predictions"))
+    # TODO: maybe parallelize this more efficiently? this is double layer of threading with GIL...
+    swe_scores = Parallel(n_jobs=-1, backend="threading", timeout=300)(
+        delayed(swesmith_reward)(step, index=i) for i in range(n)
+    )
 
-    <|im_start|>assistant
-    <think>here are some thoughts</think><terminal>this is a terminal command</terminal><|im_end|>
-    <|im_start|>user
-    <output>...</output><|im_end|>
-    <|im_start|>assistant
-    <think>ok seems like pretty interesting</think><answer>the answer is this \\boxed{thing}</answer><|im_end|>
-    """
+    # print(swe_scores)
+    # print(len(swe_scores))
+    # print(len(swe_scores[0]))
 
-    """
-    steps:
-    1. check format
-    2. run swebench evaluator on patch files
-    3. get scores
-    4. return scores
-    """
+    # swe_scores: [[a,b,c,d], [a,b,c,d], [a,b,c,d]] (n x B)
+    # swe_scores_flattened: [a,a,a,b,b,b,c,c,c,d,d,d] (nB)
 
-    return [0] * len(data_sources)
+    # 0,0 1,0 2,0
+    # 0,1 1,1 2,1
+    # 0,2 1,2 2,2
+    # 0,3 1,3 2,3
+
+    # print("before flatten:", swe_scores)
+
+    swe_scores_flattened = []
+    for i in range(len(swe_scores[0])):
+        for j in range(n):
+            swe_scores_flattened.append(swe_scores[j][i])
+
+    format_rewards = [format_reward(solution) for solution in solution_strs]
+
+    rewards = [s + f for s, f in zip(swe_scores_flattened, format_rewards)]
+
+    print(f"swe scores: {swe_scores_flattened}")
+    print(f"format rewards: {format_rewards}")
+    print(f"rewards: {rewards}")
+
+    step += 1
+
+    return rewards
 
 
 @pytest.mark.parametrize(
