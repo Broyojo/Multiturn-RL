@@ -1,5 +1,5 @@
 import re
-import select
+import selectors
 import time
 
 import docker
@@ -70,15 +70,24 @@ class Terminal:
         output_buffer = b""
         start_time = time.time()
 
-        while True:
-            readable, _, _ = select.select([self.socket._sock], [], [], 0.1)
-            if readable:
-                chunk = self.socket._sock.recv(4096)
-                if not chunk:
+        sel = selectors.DefaultSelector()
+        sel.register(self.socket._sock, selectors.EVENT_READ)
+
+        try:
+            while True:
+                # waits up to 0.1s for the socket to be readable
+                events = sel.select(timeout=0.1)
+                for key, _ in events:
+                    chunk = key.fileobj.recv(4096)
+                    if not chunk:
+                        # EOF
+                        sel.unregister(key.fileobj)
+                        break
+                    output_buffer += chunk
+                if time.time() - start_time >= timeout:
                     break
-                output_buffer += chunk
-            if time.time() - start_time >= timeout:
-                break
+        finally:
+            sel.close()
 
         return output_buffer.decode("utf-8", errors="replace")
 
@@ -109,16 +118,19 @@ class Terminal:
 
 
 def interact():
-    with Terminal(
+    terminal = Terminal(
         image="swesmith.x86_64.john-kurkowski__tldextract.3d1bf184",
         commit="a2e2dab2e2f3ab56ed60f6af0abe78dafbc81cb3",
-    ) as terminal:
+    )
+    try:
         while True:
             user_input = input("input: ")
             if user_input.startswith("get_patch("):
                 print(terminal.get_patch(user_input.split("(")[1][:-1]))
             else:
                 print(terminal(user_input + "\n"))
+    finally:
+        terminal.stop()
 
 
 if __name__ == "__main__":

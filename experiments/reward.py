@@ -59,32 +59,19 @@ def format_reward(solution_str: str):
     return 1
 
 
-def normalize_score(report):
-    # Calculate raw score
+def normalized_score(report):
     solved = len(report["tests_status"]["FAIL_TO_PASS"]["success"])
+    unsolved = len(report["tests_status"]["FAIL_TO_PASS"]["failure"])
     regressed = len(report["tests_status"]["PASS_TO_PASS"]["failure"])
-    raw_score = solved - regressed
+    maintained = len(report["tests_status"]["PASS_TO_PASS"]["success"])
 
-    # Get total tests for normalization
-    total_fail_tests = len(report["tests_status"]["FAIL_TO_PASS"]["success"]) + len(
-        report["tests_status"]["FAIL_TO_PASS"]["failure"]
-    )
-    total_pass_tests = len(report["tests_status"]["PASS_TO_PASS"]["success"]) + len(
-        report["tests_status"]["PASS_TO_PASS"]["failure"]
+    fix_ratio = solved / (solved + unsolved) if solved + unsolved > 0 else 0
+    regression_ratio = (
+        regressed / (regressed + maintained) if regressed + maintained > 0 else 0
     )
 
-    # Theoretical minimum and maximum scores
-    min_score = -total_pass_tests  # Worst case: all previously passing tests now fail
-    max_score = total_fail_tests  # Best case: all previously failing tests now pass
-
-    # Handle edge case
-    if min_score == max_score:
-        return 0.0  # Default to 0 if no test cases to evaluate
-
-    # Normalize to [0, 1]
-    normalized_score = (raw_score - min_score) / (max_score - min_score)
-
-    return normalized_score
+    score = fix_ratio - regression_ratio
+    return score
 
 
 def swesmith_reward(step, index, max_workers=4):
@@ -114,7 +101,7 @@ def swesmith_reward(step, index, max_workers=4):
             swe_scores.append(0)
             continue
 
-        score = normalize_score(report)
+        score = normalized_score(report)
         swe_scores.append(score)
     return swe_scores
 
@@ -122,6 +109,7 @@ def swesmith_reward(step, index, max_workers=4):
 step = 0
 
 
+# TODO: add swebench evaluation path (should be very similar to swesmith one)
 def compute_score(
     data_sources: list[str],
     solution_strs: list[str],
