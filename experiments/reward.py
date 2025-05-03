@@ -102,7 +102,7 @@ def swesmith_reward(step, index, max_workers=4):
         instances = [json.loads(line)["instance_id"] for line in f.readlines()]
     for instance in instances:
         if "report.json" not in os.listdir(
-            f"./logs/run_evaluation/{run_id}/{instance})"
+            f"./logs/run_evaluation/{run_id}/{instance}"
         ):
             swe_scores.append(0)
             continue
