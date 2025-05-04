@@ -12,7 +12,7 @@ def create_html_from_jsonl(input_file, output_file):
         input_file: Path to the JSONL file
         output_file: Path to save the HTML output
     """
-    with open(input_file, "r", encoding="utf-8") as f:
+    with open(input_file, encoding="utf-8") as f:
         html_content = []
 
         # Start HTML document
@@ -126,9 +126,7 @@ def create_html_from_jsonl(input_file, output_file):
                 if "system" in input_data and "user" in input_data:
                     # This assumes the format is "system\n{system_content}\nuser\n{user_content}"
                     parts = input_data.split("user\n", 1)
-                    system_content = (
-                        parts[0].replace("system\n", "", 1) if len(parts) > 0 else ""
-                    )
+                    system_content = parts[0].replace("system\n", "", 1) if len(parts) > 0 else ""
                     user_content = parts[1] if len(parts) > 1 else ""
                 else:
                     system_content = input_data
@@ -139,12 +137,8 @@ def create_html_from_jsonl(input_file, output_file):
 
                 # If output contains 'assistant\n' or 'user\n', format those specially
                 formatted_output = html.escape(formatted_output)
-                formatted_output = formatted_output.replace(
-                    "assistant\n", "<strong>assistant</strong>\n"
-                )
-                formatted_output = formatted_output.replace(
-                    "user\n", "<strong>user</strong>\n"
-                )
+                formatted_output = formatted_output.replace("assistant\n", "<strong>assistant</strong>\n")
+                formatted_output = formatted_output.replace("user\n", "<strong>user</strong>\n")
 
                 # Create HTML for this sample
                 html_content.append(f"""

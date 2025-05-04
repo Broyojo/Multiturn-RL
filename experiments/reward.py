@@ -10,8 +10,10 @@ import os
 import re
 
 import pytest
+import ray
+import swebench.harness.run_evaluation
 import swesmith.harness.eval
-from joblib import Parallel, delayed
+from swebench.harness.constants import KEY_INSTANCE_ID
 
 
 def format_reward(solution_str: str):
@@ -120,8 +122,7 @@ def normalized_score(report):
 
 
 def swesmith_reward(step, index, max_workers=4):
-    # print(f"swesmith_reward({step}, {index})")
-    run_id = f"step{step}-n{index}"
+    run_id = f"step{step}-n{index}-train"
     predictions = f"./predictions/predictions_{index}.jsonl"
     swesmith.harness.eval.main(
         dataset_path="./data/swebench/swesmith.jsonl",
@@ -131,7 +132,7 @@ def swesmith_reward(step, index, max_workers=4):
     )
     swe_scores = []
     with open(predictions) as f:
-        instances = [json.loads(line)["instance_id"] for line in f.readlines()]
+        instances = [json.loads(line)[KEY_INSTANCE_ID] for line in f.readlines()]
     for instance in instances:
         if "report.json" not in os.listdir(f"./logs/run_evaluation/{run_id}/{instance}"):
             swe_scores.append(0)
@@ -149,10 +150,51 @@ def swesmith_reward(step, index, max_workers=4):
     return swe_scores
 
 
-step = 1
+def swebench_reward(step, index, max_workers=4):
+    run_id = f"step{step}-n{index}-eval"
+    predictions = f"./predictions/predictions_{index}.jsonl"
+    swebench.harness.run_evaluation.main(
+        dataset_name="./data/swebench/swebench.json",
+        split="test",
+        instance_ids=[],
+        predictions_path=predictions,
+        max_workers=max_workers,
+        force_rebuild=False,
+        cache_level="env",
+        clean=False,
+        open_file_limit=4096,
+        run_id=run_id,
+        timeout=1800,
+        namespace="swebench",
+        rewrite_reports=False,
+        modal=False,
+    )
+    swe_scores = []
+    with open(predictions) as f:
+        instances = [json.loads(line)[KEY_INSTANCE_ID] for line in f.readlines()]
+
+    extra_model_dir = [x for x in os.listdir(f"./logs/run_evaluation/{run_id}/") if not x.endswith(".json")][0]
+    for instance in instances:
+        if "report.json" not in os.listdir(f"./logs/run_evaluation/{run_id}/{extra_model_dir}/{instance}"):
+            swe_scores.append(0)
+            continue
+
+        with open(f"./logs/run_evaluation/{run_id}/{extra_model_dir}/{instance}/report.json") as f:
+            report = json.load(f)[instance]
+
+        if "tests_status" not in report:
+            swe_scores.append(0)
+            continue
+
+        score = normalized_score(report)
+        swe_scores.append(score)
+    return swe_scores
 
 
-# TODO: add swebench evaluation path (should be very similar to swesmith one)
+train_step = 1
+eval_step = 1
+
+
 def compute_score(
     data_sources: list[str],
     solution_strs: list[str],
@@ -160,15 +202,32 @@ def compute_score(
     extra_infos: list[dict],
     **reward_kwargs,
 ):
-    global step
+    global train_step, eval_step
+
+    @ray.remote
+    def swesmith_reward_remote(step, index):
+        # TODO: find way to intelligently calculate max_workers
+        return swesmith_reward(step, index=index, max_workers=4)
+
+    @ray.remote
+    def swebench_reward_remote(step, index):
+        return swebench_reward(step, index=index, max_workers=min(os.cpu_count(), 24))
 
     n = len(os.listdir("./predictions"))
-    # TODO: maybe parallelize this more efficiently? this is double layer of threading with GIL...
-    swe_scores = Parallel(n_jobs=-1, backend="threading")(delayed(swesmith_reward)(step, index=i) for i in range(n))
 
-    # print(swe_scores)
-    # print(len(swe_scores))
-    # print(len(swe_scores[0]))
+    if data_sources[0] == "swesmith":
+        futures = [swesmith_reward_remote.remote(train_step, i) for i in range(n)]
+        swe_scores = ray.get(futures)
+        train_step += 1
+    elif data_sources[0] == "swebench":
+        futures = [swebench_reward_remote.remote(eval_step, i) for i in range(n)]
+        swe_scores = ray.get(futures)
+        eval_step += 1
+    else:
+        raise ValueError(f"unknown data source: {data_sources[0]}")
+
+    for i in range(n):
+        os.remove(f"./predictions/predictions_{i}.jsonl")
 
     # swe_scores: [[a,b,c,d], [a,b,c,d], [a,b,c,d]] (n x B)
     # swe_scores_flattened: [a,a,a,b,b,b,c,c,c,d,d,d] (nB)
@@ -177,8 +236,6 @@ def compute_score(
     # 0,1 1,1 2,1
     # 0,2 1,2 2,2
     # 0,3 1,3 2,3
-
-    # print("before flatten:", swe_scores)
 
     swe_scores_flattened = []
     for i in range(len(swe_scores[0])):
@@ -196,8 +253,6 @@ def compute_score(
     print(f"swe scores: {swe_scores_flattened}")
     print(f"format rewards: {format_rewards}")
     print(f"rewards: {rewards}")
-
-    step += 1
 
     return rewards
 

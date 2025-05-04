@@ -19,6 +19,7 @@ import os
 
 import hydra
 import ray
+import reward
 from reward_manager import RewardManager
 from trainer import RayPPOTrainer
 
@@ -45,9 +46,7 @@ def get_custom_reward_fn(config):
 
     function_name = reward_fn_config.get("name")
     if not hasattr(module, function_name):
-        raise AttributeError(
-            f"Reward function '{function_name}' not found in '{file_path}'."
-        )
+        raise AttributeError(f"Reward function '{function_name}' not found in '{file_path}'.")
 
     print(f"using customized reward function '{function_name}' from '{file_path}'")
     raw_fn = getattr(module, function_name)
@@ -68,9 +67,7 @@ def main(config):
 def run_ppo(config) -> None:
     # TODO(linjunrong.ocss884): this ENV is left for resolving SGLang conflict with ray devices
     # isolation, will solve in the future
-    os.environ["ENSURE_CUDA_VISIBLE_DEVICES"] = os.environ.get(
-        "CUDA_VISIBLE_DEVICES", ""
-    )
+    os.environ["ENSURE_CUDA_VISIBLE_DEVICES"] = os.environ.get("CUDA_VISIBLE_DEVICES", "")
     if not ray.is_initialized():
         # this is for local ray cluster
         ray.init(
@@ -98,9 +95,7 @@ class TaskRunner:
 
         from verl.utils.fs import copy_to_local
 
-        pprint(
-            OmegaConf.to_container(config, resolve=True)
-        )  # resolve=True will eval symbol values
+        pprint(OmegaConf.to_container(config, resolve=True))  # resolve=True will eval symbol values
         OmegaConf.resolve(config)
 
         # download the checkpoint from hdfs
@@ -111,9 +106,7 @@ class TaskRunner:
 
         trust_remote_code = config.data.get("trust_remote_code", False)
         tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
-        processor = hf_processor(
-            local_path, use_fast=True
-        )  # used for multimodal LLM, could be none
+        processor = hf_processor(local_path, use_fast=True)  # used for multimodal LLM, could be none
 
         # define worker classes
         if config.actor_rollout_ref.actor.strategy == "fsdp":
@@ -179,14 +172,11 @@ class TaskRunner:
             mapping[Role.RewardModel] = global_pool_id
 
         # use reference model
-        if (
-            config.algorithm.use_kl_in_reward
-            or config.actor_rollout_ref.actor.use_kl_loss
-        ):
+        if config.algorithm.use_kl_in_reward or config.actor_rollout_ref.actor.use_kl_loss:
             role_worker_mapping[Role.RefPolicy] = ray.remote(ActorRolloutRefWorker)
             mapping[Role.RefPolicy] = global_pool_id
 
-        compute_score = get_custom_reward_fn(config)
+        compute_score = reward.compute_score
         reward_fn = RewardManager(
             tokenizer,
             num_examine=0,
@@ -201,9 +191,7 @@ class TaskRunner:
             reward_fn_key=config.data.reward_fn_key,
             **config.reward_model.get("reward_kwargs", {}),
         )
-        resource_pool_manager = ResourcePoolManager(
-            resource_pool_spec=resource_pool_spec, mapping=mapping
-        )
+        resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
 
         trainer = RayPPOTrainer(
             config=config,

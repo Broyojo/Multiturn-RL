@@ -422,18 +422,18 @@ def get_dataset_from_preds(
         print(f"{len(completed_ids)} instances already run, skipping...")
         dataset = [i for i in dataset if i[KEY_INSTANCE_ID] not in completed_ids]
 
-    empty_patch_ids = {
-        k
-        for k, v in predictions.items()
-        if v[KEY_PREDICTION] == "" or v[KEY_PREDICTION] is None
-    }
+    # empty_patch_ids = {
+    #     k
+    #     for k, v in predictions.items()
+    #     if v[KEY_PREDICTION] == "" or v[KEY_PREDICTION] is None
+    # }
 
     # filter dataset to only instances with predictions
     dataset = [
         i
         for i in dataset
         if i[KEY_INSTANCE_ID] in prediction_ids
-        and i[KEY_INSTANCE_ID] not in empty_patch_ids
+        # and i[KEY_INSTANCE_ID] not in empty_patch_ids
     ]
     return dataset
 

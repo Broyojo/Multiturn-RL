@@ -45,12 +45,12 @@ python3 -m main \
     algorithm.use_kl_in_reward=False \
     trainer.critic_warmup=0 \
     trainer.rollout_data_dir=./rollouts \
-    trainer.logger=['console','wandb'] \
+    trainer.logger=['console'] \
     trainer.project_name='multiturn-rl' \
-    trainer.experiment_name='qwen2.5-0.5b-swebench-terminal-format' \
+    trainer.experiment_name='qwen3-0.6b-swebench-terminal-format' \
     trainer.val_before_train=False \
     trainer.n_gpus_per_node=1 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
-    trainer.test_freq=-1 \
+    trainer.test_freq=1 \
     trainer.total_epochs=1 $@

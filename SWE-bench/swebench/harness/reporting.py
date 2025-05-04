@@ -1,14 +1,15 @@
-import docker
 import json
 from pathlib import Path
 from typing import Optional
+
+import docker
 
 from swebench.harness.constants import (
     KEY_INSTANCE_ID,
     KEY_MODEL,
     KEY_PREDICTION,
-    RUN_EVALUATION_LOG_DIR,
     LOG_REPORT,
+    RUN_EVALUATION_LOG_DIR,
 )
 from swebench.harness.docker_utils import list_images
 from swebench.harness.test_spec.test_spec import make_test_spec
@@ -128,11 +129,8 @@ def make_run_report(
                 "unremoved_images": list(sorted(unremoved_images)),
             }
         )
-    report_file = Path(
-        list(predictions.values())[0][KEY_MODEL].replace("/", "__")
-        + f".{run_id}"
-        + ".json"
-    )
+    model_str = list(predictions.values())[0][KEY_MODEL].replace("/", "__")
+    report_file = Path(f"./logs/run_evaluation/{run_id}/{model_str}/" + model_str + f".{run_id}" + ".json")
     with open(report_file, "w") as f:
         print(json.dumps(report, indent=4), file=f)
     print(f"Report written to {report_file}")

@@ -1002,6 +1002,8 @@ class RayPPOTrainer:
                             gen_batch_output = self.async_rollout_manager.generate_sequences(gen_batch)
                             self.async_rollout_manager.sleep()
 
+                    # TODO: what other things should we keep track of?
+
                     # log number of terminal calls
                     terminal_counts = []
                     for response in gen_batch_output.batch["responses"]:

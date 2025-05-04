@@ -159,6 +159,7 @@ def build_swebench_test(dataset, split):
                 },
             }
         )
+    Dataset.from_list(dataset).to_json("./data/swebench/swebench.json", batch_size=len(dataset), lines=False)
 
     return Dataset.from_list(verl_dataset)
 
@@ -171,7 +172,7 @@ def main():
     train_dataset = train_dataset.filter(lambda e: len(e["problem_statement"]) > 0, num_proc=16)
     train_dataset = build_swesmith_train(train_dataset)
 
-    test_dataset = build_swebench_test(load_swebench_dataset("princeton-nlp/SWE-bench", "test"), split="test")
+    test_dataset = build_swebench_test(load_swebench_dataset("princeton-nlp/SWE-bench_Verified", "test"), split="test")
 
     train_dataset.to_parquet(os.path.join(OUT, "train.parquet"))
     test_dataset.to_parquet(os.path.join(OUT, "test.parquet"))
