@@ -19,9 +19,9 @@ python3 -m main \
     data.train_files=data/swebench/train.parquet \
     data.val_files=data/swebench/test.parquet \
     data.return_raw_chat=True \
-    data.train_batch_size=64 \
-    data.max_prompt_length=8192 \
-    data.max_response_length=8192 \
+    data.train_batch_size=8 \
+    data.max_prompt_length=2048 \
+    data.max_response_length=1024 \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     actor_rollout_ref.model.path=$MODEL \
@@ -29,9 +29,9 @@ python3 -m main \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.ppo_mini_batch_size=2 \
     actor_rollout_ref.actor.use_dynamic_bsz=True \
-    actor_rollout_ref.actor.ppo_max_token_len_per_gpu=30720 \
+    actor_rollout_ref.actor.ppo_max_token_len_per_gpu=6144 \
     actor_rollout_ref.actor.use_kl_loss=True \
-    actor_rollout_ref.actor.kl_loss_coef=0.0 \
+    actor_rollout_ref.actor.kl_loss_coef=0.001 \
     actor_rollout_ref.actor.kl_loss_type=low_var_kl \
     actor_rollout_ref.actor.entropy_coeff=0 \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
@@ -42,7 +42,10 @@ python3 -m main \
     actor_rollout_ref.rollout.mode=async \
     actor_rollout_ref.rollout.chat_scheduler=chat_scheduler.TerminalChatCompletionScheduler \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.6 \
-    actor_rollout_ref.rollout.n=16 \
+    actor_rollout_ref.rollout.n=10 \
+    actor_rollout_ref.rollout.temperature=1.0 \
+    actor_rollout_ref.rollout.top_p=1.0 \
+    actor_rollout_ref.rollout.top_k=-1 \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
@@ -58,5 +61,5 @@ python3 -m main \
     trainer.n_gpus_per_node=1 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
-    trainer.test_freq=10 \
+    trainer.test_freq=1 \
     trainer.total_epochs=1 $@

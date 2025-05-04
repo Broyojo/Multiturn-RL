@@ -220,6 +220,8 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             for messages in batch_messages
         ]
 
+        # mask = get_assistant_mask(self.tokenizer, sequences)
+
         responses = [sequence[len(prompts[i // n]) :] for i, sequence in enumerate(sequences)]
 
         prompts = self.tokenizer(prompts, return_tensors="pt", padding="longest", padding_side="left")
@@ -227,8 +229,6 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
         if n > 1:
             prompts["input_ids"] = prompts["input_ids"].repeat_interleave(n, dim=0)
             prompts["attention_mask"] = prompts["attention_mask"].repeat_interleave(n, dim=0)
-
-        # TODO: add assistant message masking here
 
         input_ids = torch.cat([prompts["input_ids"], responses["input_ids"]], dim=1)
         attention_mask = torch.cat([prompts["attention_mask"], responses["attention_mask"]], dim=1)

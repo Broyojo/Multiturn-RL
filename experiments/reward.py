@@ -44,7 +44,7 @@ def format_reward(solution_str: str):
     solution_str = "<|im_start|>assistant\n" + solution_str
 
     # extract the inner content of each assistant block
-    blocks = re.findall(r"<\|im_start\|>assistant(.*?)<\|im_end\|>", solution_str, re.S)
+    blocks = re.findall(r"<\|im_start\|>assistant\n(.*?)<\|im_end\|>", solution_str, re.S)
     if not blocks:
         return 0
 
