@@ -151,7 +151,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
                     "content": f"<terminal_output>{output}</terminal_output>",
                 }
             )
-            print("*************** <terminal> call :", messages)
+            # print("*************** <terminal> call :", messages)
             await self.submit_chat_completions(
                 callback=callback,
                 callback_additional_info={
