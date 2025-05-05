@@ -86,8 +86,8 @@ class Terminal:
         return output_buffer.decode("utf-8", errors="replace")
 
     def __call__(self, input: str, timeout=1):
-        print("=" * 50)
-        print(f"typing {repr(input)}")
+        # print("=" * 50)
+        # print(f"typing {repr(input)}")
 
         self.socket._sock.send(self.encode_input(input))
 
