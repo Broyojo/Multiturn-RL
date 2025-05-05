@@ -79,7 +79,7 @@ def build_swesmith_train(ds):
 
 
 def build_swebench_test(dataset, split):
-    successful, _ = build_instance_images(client=client, dataset=dataset, max_workers=8, tag=LATEST)
+    successful, _ = build_instance_images(client=client, dataset=dataset, max_workers=os.cpu_count(), tag=LATEST)
 
     image_map = {t[0].instance_id: t[0] for t in successful}
 

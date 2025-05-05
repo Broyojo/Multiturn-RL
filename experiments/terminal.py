@@ -109,7 +109,7 @@ class Terminal:
                 # instead, have the agent add new files to git itself
                 f"bash -c 'cd {DOCKER_WORKDIR} && git diff {base_commit}'",
                 user=DOCKER_USER,
-            ).output.decode("utf-8")
+            ).output.decode("utf-8", errors="replace")
         except docker.errors.APIError as e:
             if "is not running" in str(e):
                 return ""
