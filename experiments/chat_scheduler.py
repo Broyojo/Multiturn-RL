@@ -196,7 +196,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             t["terminal"].stop()
             return patch
 
-        patches = Parallel(n_jobs=-1, backend="threading")(delayed(make_patch)(traj) for traj in trajectories)
+        patches = Parallel(n_jobs=64, backend="threading")(delayed(make_patch)(traj) for traj in trajectories)
 
         save_predictions(patches, old_n)
 
