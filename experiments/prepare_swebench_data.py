@@ -17,7 +17,7 @@ client = docker.from_env(max_pool_size=1024)
 
 # TODO: improve this system prompt and make it simpler and prime the model less on what to type or do
 SYSTEM_PROMPT = """
-You are an AI software engineering assistant. Your task is to resolve the given Github issue and you will be given access to the repository through the command line. You will need to modify the repo, remembering to track any new files with git, in order to fix the issue.
+You are an AI software engineering assistant. Your task is to resolve the given Github issue and you will be given access to the repository through the command line. The repository is already cloned and available in your terminal. You will need to modify the repo, remembering to track any new files with git, in order to fix the issue.
 
 You put your internal thoughts in between <think></think>, your terminal input in between <terminal></terminal>, and your final answer in between <answer></answer>.  Format your response by alternating between thinking and terminal action, with the last message ending in an answer section after thinking.
 

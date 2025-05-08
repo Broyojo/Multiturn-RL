@@ -12,17 +12,47 @@ from openai.types.chat.chat_completion import ChatCompletion
 from swebench.harness.constants import KEY_INSTANCE_ID, KEY_MODEL, KEY_PREDICTION
 from tensordict import TensorDict
 from terminal import Terminal
+from tqdm import tqdm
 
 from verl.protocol import DataProto
 from verl.workers.rollout.async_server import ChatCompletionScheduler
 
 
+# @retry
 def make_trajectory(messages, extra_info):
+    # try:
     terminal = Terminal(image=extra_info["docker_image"], commit=extra_info["base_commit"])
     return {"messages": list(messages), "terminal": terminal, "extra_info": extra_info}
+    # except Exception as e:
+    #     print(traceback.format_exc())
+    #     raise e
 
 
-GLOBAL_POOL = ThreadPoolExecutor(max_workers=64, thread_name_prefix="docker")
+# @retry(
+#     stop=stop_after_attempt(3),
+#     wait=wait_exponential(multiplier=1, min=1, max=10) + wait_random(0, 2),
+#     reraise=False,
+#     retry_error_callback=lambda retry_state: {
+#         KEY_INSTANCE_ID: retry_state.args[0]["extra_info"]["instance_id"],
+#         KEY_MODEL: retry_state.args[1],
+#         KEY_PREDICTION: "",
+#     },
+# )
+def make_patch(t, model_name):
+    # try:
+    patch = {
+        KEY_INSTANCE_ID: t["extra_info"]["instance_id"],
+        KEY_MODEL: model_name,
+        KEY_PREDICTION: t["terminal"].get_patch(t["extra_info"]["base_commit"]),
+    }
+    t["terminal"].stop()
+    return patch
+    # except Exception as e:
+    #     print(traceback.format_exc())
+    #     raise e
+
+
+GLOBAL_POOL = ThreadPoolExecutor(max_workers=1024, thread_name_prefix="docker")
 
 
 async def call_terminal(term: Terminal, input: str, timeout=1):
@@ -96,12 +126,18 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
 
         trajectories = Parallel(n_jobs=-1, backend="threading")(
             delayed(make_trajectory)(messages, extra_info)
-            for messages, extra_info in zip(
-                batch.non_tensor_batch["raw_prompt"],
-                batch.non_tensor_batch["extra_info"],
-                strict=False,
+            for messages, extra_info in tqdm(
+                [
+                    (messages, extra_info)
+                    for messages, extra_info in zip(
+                        batch.non_tensor_batch["raw_prompt"],
+                        batch.non_tensor_batch["extra_info"],
+                        strict=False,
+                    )
+                    for _ in range(kwargs["n"])
+                ],
+                desc="Starting containers...",
             )
-            for _ in range(kwargs["n"])
         )
 
         old_n = kwargs["n"]
@@ -187,16 +223,9 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
         await asyncio.gather(*tasks)
         print(f"[{self.__class__.__name__}] generate_sequences done")
 
-        def make_patch(t):
-            patch = {
-                KEY_INSTANCE_ID: t["extra_info"]["instance_id"],
-                KEY_MODEL: self.model_name,
-                KEY_PREDICTION: t["terminal"].get_patch(t["extra_info"]["base_commit"]),
-            }
-            t["terminal"].stop()
-            return patch
-
-        patches = Parallel(n_jobs=64, backend="threading")(delayed(make_patch)(traj) for traj in trajectories)
+        patches = Parallel(n_jobs=-1, backend="threading")(
+            delayed(make_patch)(traj, self.model_name) for traj in tqdm(trajectories, desc="Extracting patches...")
+        )
 
         save_predictions(patches, old_n)
 

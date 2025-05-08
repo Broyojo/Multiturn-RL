@@ -6,12 +6,9 @@ export WANDB_API_KEY="121d8f0d656e06f7ebd1c51e71e4dbcdb654af8e"
 # TODO: set this up for hyparameter optimization
 
 # Hyperparamaters
-MODEL="Qwen/Qwen3-8B"
+MODEL="Qwen/Qwen2.5-7B-Instruct"
 PROJECT="multiturn-rl"
 EXPERIMENT="$MODEL-swe-terminal"
-
-export DOCKER_CLIENT_TIMEOUT=120
-export COMPOSE_HTTP_TIMEOUT=120
 
 # to enable wandb resuming:
 # RUN_ID=$(echo -n "$EXPERIMENT" | md5sum | cut -c1-8)
@@ -24,8 +21,8 @@ python3 -m main \
     data.val_files=data/swebench/test.parquet \
     data.return_raw_chat=True \
     data.train_batch_size=63 \
-    data.max_prompt_length=8192 \
-    data.max_response_length=8192 \
+    data.max_prompt_length=1024 \
+    data.max_response_length=1 \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     actor_rollout_ref.model.path=$MODEL \
@@ -33,7 +30,7 @@ python3 -m main \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.ppo_mini_batch_size=16 \
     actor_rollout_ref.actor.use_dynamic_bsz=True \
-    actor_rollout_ref.actor.ppo_max_token_len_per_gpu=262144 \
+    actor_rollout_ref.actor.ppo_max_token_len_per_gpu=24576 \
     actor_rollout_ref.actor.use_kl_loss=True \
     actor_rollout_ref.actor.kl_loss_coef=0.0 \
     actor_rollout_ref.actor.kl_loss_type=low_var_kl \
@@ -50,12 +47,12 @@ python3 -m main \
     actor_rollout_ref.rollout.temperature=1.0 \
     actor_rollout_ref.rollout.top_p=1.0 \
     actor_rollout_ref.rollout.top_k=-1 \
-    actor_rollout_ref.rollout.max_model_len=16384 \
-    actor_rollout_ref.rollout.max_num_batched_tokens=16384 \
+    actor_rollout_ref.rollout.max_model_len=1536 \
+    actor_rollout_ref.rollout.max_num_batched_tokens=1536 \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
-    actor_rollout_ref.ref.log_prob_max_token_len_per_gpu=1310720 \
+    actor_rollout_ref.ref.log_prob_max_token_len_per_gpu=24576 \
     algorithm.use_kl_in_reward=False \
     trainer.critic_warmup=0 \
     trainer.rollout_data_dir=./rollouts/train \
@@ -69,3 +66,6 @@ python3 -m main \
     trainer.save_freq=10 \
     trainer.test_freq=10 \
     trainer.total_epochs=1 $@
+
+docker stop $(docker ps -a -q) > /dev/null
+docker rm $(docker ps -a -q) > /dev/null

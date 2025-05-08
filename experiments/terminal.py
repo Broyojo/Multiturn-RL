@@ -1,11 +1,12 @@
 import re
 import selectors
 import time
+import traceback
 
 import docker
 from swebench.harness.constants import DOCKER_USER, DOCKER_WORKDIR, UTF8
 
-CLIENT = docker.from_env(max_pool_size=1024)
+CLIENT = docker.from_env(max_pool_size=1024, timeout=100000)
 
 
 class Terminal:
@@ -22,24 +23,34 @@ class Terminal:
             working_dir=DOCKER_WORKDIR,
         )
         if commit is not None:
-            self.container.exec_run("git fetch", workdir=DOCKER_WORKDIR, user=DOCKER_USER)
-            val = self.container.exec_run(f"git checkout {commit}", workdir=DOCKER_WORKDIR, user=DOCKER_USER)
-            if val.exit_code != 0:
+            self.exec_run("git fetch")
+            val = self.exec_run(f"git checkout {commit}")
+            if val is None or val.exit_code != 0:
                 print(f"CHECKOUT FAILED: {val.output.decode(UTF8)}")
 
             # allow git commits
-            self.container.exec_run(
-                'git config --global user.email "you@example.com"',
-                workdir=DOCKER_WORKDIR,
-                user=DOCKER_USER,
-            )
-            self.container.exec_run(
-                'git config --global user.name "Your Name"',
-                workdir=DOCKER_WORKDIR,
-                user=DOCKER_USER,
-            )
+            self.exec_run('git config --global user.email "you@example.com"')
+            self.exec_run('git config --global user.name "Your Name"')
+            # Make sure the main/master branch is deleted
+            self.exec_run("git branch -D main master")
+            # Remove the remote origin to prevent pulling main again
+            self.exec_run("git remote remove origin")
+            # Clear the reflog and perform garbage collection
+            self.exec_run("git reflog expire --expire=now --all")
+            self.exec_run("git gc --prune=now --aggressive")
+
         self.socket = self.container.attach_socket(params={"stdin": 1, "stdout": 1, "stderr": 1, "stream": 1})
         self.ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+    def exec_run(self, command):
+        try:
+            return self.container.exec_run(
+                command,
+                workdir=DOCKER_WORKDIR,
+                user=DOCKER_USER,
+            )
+        except Exception:
+            print(traceback.format_exc())
 
     def _strip_ansi(self, text):
         return self.ansi_escape.sub("", text)
@@ -104,11 +115,10 @@ class Terminal:
 
     def get_patch(self, base_commit: str):
         try:
-            return self.container.exec_run(
+            return self.exec_run(
                 # we cannot do `git add -A` here since that may add unadded files
                 # instead, have the agent add new files to git itself
-                f"bash -c 'cd {DOCKER_WORKDIR} && git diff {base_commit}'",
-                user=DOCKER_USER,
+                f"bash -c 'git diff {base_commit}'",
             ).output.decode("utf-8", errors="replace")
         except docker.errors.APIError as e:
             if "is not running" in str(e):

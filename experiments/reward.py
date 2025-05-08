@@ -204,16 +204,15 @@ def compute_score(
 ):
     global train_step, eval_step
 
+    n = len(os.listdir("./predictions"))
+
     @ray.remote
     def swesmith_reward_remote(step, index):
-        # TODO: find way to intelligently calculate max_workers
-        return swesmith_reward(step, index=index, max_workers=4)
+        return swesmith_reward(step, index=index, max_workers=8)
 
     @ray.remote
     def swebench_reward_remote(step, index):
-        return swebench_reward(step, index=index, max_workers=min(os.cpu_count(), 24))
-
-    n = len(os.listdir("./predictions"))
+        return swebench_reward(step, index=index, max_workers=min(0.75 * os.cpu_count(), 24))
 
     if data_sources[0] == "swesmith":
         futures = [swesmith_reward_remote.remote(train_step, i) for i in range(n)]
