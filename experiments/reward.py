@@ -242,16 +242,16 @@ def compute_score(
             swe_scores_flattened.append(swe_scores[j][i])
 
     format_rewards = [format_reward(solution) for solution in solution_strs]
-    for i in range(len(format_rewards)):
-        print(repr(solution_strs[i]), format_rewards[i])
+    # for i in range(len(format_rewards)):
+    #     print(repr(solution_strs[i]), format_rewards[i])
 
     assert len(format_rewards) == len(swe_scores_flattened)
 
     rewards = [s + f for s, f in zip(swe_scores_flattened, format_rewards, strict=False)]
 
-    print(f"swe scores: {swe_scores_flattened}")
-    print(f"format rewards: {format_rewards}")
-    print(f"rewards: {rewards}")
+    # print(f"swe scores: {swe_scores_flattened}")
+    # print(f"format rewards: {format_rewards}")
+    # print(f"rewards: {rewards}")
 
     return rewards
 

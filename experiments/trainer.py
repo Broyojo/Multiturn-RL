@@ -191,7 +191,9 @@ def compute_response_mask(data: DataProto):
     responses = data.batch["responses"]
     response_length = responses.size(1)
     attention_mask = data.batch["attention_mask"]
-    return attention_mask[:, -response_length:]
+    assistant_mask = data.batch["assistant_mask"]
+    # print("assistant mask:", assistant_mask)
+    return attention_mask[:, -response_length:] & assistant_mask
 
 
 def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_repeat=1, norm_adv_by_std_in_grpo=True):
@@ -1137,6 +1139,7 @@ class RayPPOTrainer:
                     if self.config.trainer.critic_warmup <= self.global_steps:
                         # update actor
                         with _timer("update_actor", timing_raw):
+                            batch.batch["loss_mask"] = compute_response_mask(batch)
                             actor_output = self.actor_rollout_wg.update_actor(batch)
                         actor_output_metrics = reduce_metrics(actor_output.meta_info["metrics"])
                         metrics.update(actor_output_metrics)

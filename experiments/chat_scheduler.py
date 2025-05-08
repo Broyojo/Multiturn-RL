@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -13,9 +14,45 @@ from swebench.harness.constants import KEY_INSTANCE_ID, KEY_MODEL, KEY_PREDICTIO
 from tensordict import TensorDict
 from terminal import Terminal
 from tqdm import tqdm
+from transformers import PreTrainedTokenizer
 
 from verl.protocol import DataProto
 from verl.workers.rollout.async_server import ChatCompletionScheduler
+
+
+def get_assistant_mask(tokenizer: PreTrainedTokenizer, responses: list[str]) -> torch.Tensor:
+    """
+    makes a mask for the response (1 for assistant response, otherwise 0)
+    """
+
+    responses = ["<|im_start|>assistant\n" + response for response in responses]
+
+    encoding = tokenizer(
+        responses, return_tensors="pt", padding="longest", padding_side="right", return_offsets_mapping=True
+    )
+    masks = []
+    for i, response in enumerate(responses):
+        matches = re.finditer(r"<\|im_start\|>assistant\n(.*?)<\|im_end\|>", response, re.S)
+        mask = torch.zeros_like(encoding["input_ids"][i])
+        offset_list = encoding["offset_mapping"][i].tolist()
+        for match in matches:
+            content_start = match.start(1)  # Start of assistant content
+            content_end = match.end(1)  # End of assistant content
+            im_end_start = match.end(1)  # Start of <|im_end|> token
+            im_end_end = match.end(0)  # End of the entire match
+
+            # Find all tokens that fall within the assistant message (content + end token)
+            for i, (token_start, token_end) in enumerate(offset_list):
+                # Check if token is within the assistant content
+                if content_start <= token_start < content_end and token_start < token_end <= content_end:
+                    mask[i] = 1
+                # Check if token is the <|im_end|> token
+                elif im_end_start <= token_start < im_end_end:
+                    mask[i] = 1
+
+        masks.append(mask[3:])  # remove first message prefix
+
+    return torch.stack(masks)
 
 
 # @retry
@@ -249,9 +286,8 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             for messages in batch_messages
         ]
 
-        # mask = get_assistant_mask(self.tokenizer, sequences)
-
         responses = [sequence[len(prompts[i // n]) :] for i, sequence in enumerate(sequences)]
+        assistant_mask = get_assistant_mask(self.tokenizer, responses)
 
         prompts = self.tokenizer(prompts, return_tensors="pt", padding="longest", padding_side="left")
         responses = self.tokenizer(responses, return_tensors="pt", padding="longest", padding_side="right")
@@ -270,6 +306,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
                 "input_ids": input_ids,
                 "attention_mask": attention_mask,
                 "position_ids": position_ids,
+                "assistant_mask": assistant_mask,
             },
             batch_size=len(input_ids),
         )
