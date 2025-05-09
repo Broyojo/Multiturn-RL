@@ -12,6 +12,7 @@ dependencies = [
     "swebench",
     "swesmith",
     "tenacity>=9.1.2",
+    "httpx-aiohttp>=0.1.2",
 ]
 name = "multiturn-rl"
 version = "0.1.0"

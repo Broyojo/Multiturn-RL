@@ -1,0 +1,14 @@
+program: main.py
+method: bayes
+metric:
+  goal: minimize
+  name: timing_s/step
+
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - ${args_no_hyphens}
+
+parameters:
+  

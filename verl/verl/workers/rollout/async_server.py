@@ -25,9 +25,11 @@ from uuid import uuid4
 
 import aiohttp
 import fastapi
+import openai
 import ray
 import uvicorn
 from cachetools import LRUCache
+from httpx_aiohttp import AiohttpTransport
 from omegaconf import DictConfig
 from openai import AsyncOpenAI
 from openai.types.chat.chat_completion import ChatCompletion
@@ -184,7 +186,7 @@ class ChatCompletionScheduler:
         completions, exception = None, None
         try:
             # TODO: OpenAI client uses httpx, seems to have performance issue in high concurrency requests.
-            completions = await self._chat_completions_openai(address, **chat_complete_request)
+            completions = await self._chat_completions_aiohttp(address, **chat_complete_request)
         except Exception as e:
             # Let user handle the exception
             exception = e
@@ -199,17 +201,15 @@ class ChatCompletionScheduler:
         return await client.chat.completions.create(**chat_complete_request)
 
     async def _chat_completions_aiohttp(self, address: str, **chat_complete_request) -> ChatCompletion:
-        try:
-            session = aiohttp.ClientSession()
-            async with session.post(
-                url=f"http://{address}/v1/chat/completions",
-                headers={"Authorization": "Bearer token-abc123"},
-                json=chat_complete_request,
-            ) as resp:
-                data = await resp.json()
-                return ChatCompletion(**data)
-        finally:
-            await session.close()
+        # from: https://github.com/openai/openai-python/issues/1596#issuecomment-2709021063
+        async with AiohttpTransport(client=aiohttp.ClientSession()) as aiohttp_transport:
+            httpx_client = openai.DefaultAsyncHttpxClient(transport=aiohttp_transport)
+            client = AsyncOpenAI(
+                base_url=f"http://{address}/v1",
+                api_key="token-abc123",
+                http_client=httpx_client,
+            )
+            return await client.chat.completions.create(**chat_complete_request)
 
     async def generate_sequences(self, prompts: DataProto, **sampling_params) -> DataProto:
         raise NotImplementedError
