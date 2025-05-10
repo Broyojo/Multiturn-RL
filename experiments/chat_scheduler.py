@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import re
 from collections import defaultdict
@@ -18,6 +19,11 @@ from transformers import PreTrainedTokenizer
 
 from verl.protocol import DataProto
 from verl.workers.rollout.async_server import ChatCompletionScheduler
+
+MAX_TURNS = 1000
+
+# silence annoying logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def get_assistant_mask(tokenizer: PreTrainedTokenizer, responses: list[str]) -> torch.Tensor:
@@ -55,28 +61,12 @@ def get_assistant_mask(tokenizer: PreTrainedTokenizer, responses: list[str]) -> 
     return torch.stack(masks)
 
 
-# @retry
 def make_trajectory(messages, extra_info):
-    # try:
     terminal = Terminal(image=extra_info["docker_image"], commit=extra_info["base_commit"])
     return {"messages": list(messages), "terminal": terminal, "extra_info": extra_info}
-    # except Exception as e:
-    #     print(traceback.format_exc())
-    #     raise e
 
 
-# @retry(
-#     stop=stop_after_attempt(3),
-#     wait=wait_exponential(multiplier=1, min=1, max=10) + wait_random(0, 2),
-#     reraise=False,
-#     retry_error_callback=lambda retry_state: {
-#         KEY_INSTANCE_ID: retry_state.args[0]["extra_info"]["instance_id"],
-#         KEY_MODEL: retry_state.args[1],
-#         KEY_PREDICTION: "",
-#     },
-# )
 def make_patch(t, model_name):
-    # try:
     patch = {
         KEY_INSTANCE_ID: t["extra_info"]["instance_id"],
         KEY_MODEL: model_name,
@@ -84,12 +74,9 @@ def make_patch(t, model_name):
     }
     t["terminal"].stop()
     return patch
-    # except Exception as e:
-    #     print(traceback.format_exc())
-    #     raise e
 
 
-GLOBAL_POOL = ThreadPoolExecutor(max_workers=1024, thread_name_prefix="docker")
+GLOBAL_POOL = ThreadPoolExecutor(max_workers=512, thread_name_prefix="docker")
 
 
 async def call_terminal(term: Terminal, input: str, timeout=1):
@@ -189,17 +176,18 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             info: dict[str, Any],
             exception: Exception | None,
         ):
-            index, messages, terminal, batch_messages = (
+            index, messages, terminal, batch_messages, turn = (
                 info["index"],
                 info["messages"].copy(),
                 info["terminal"],
                 info["batch_messages"],
+                info["turn"],
             )
 
-            if exception is not None:
+            if turn > MAX_TURNS or exception is not None:
                 # this may be from the terminal output overstepping the context length.
                 # in this case, we just return the messages but don't include the terminal output
-                print(f"Callback exception: {exception}")
+                # print(f"Callback exception: {exception}")
                 batch_messages[index] = messages[:-1]
                 return
 
@@ -232,6 +220,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
                     "messages": messages,
                     "terminal": terminal,
                     "batch_messages": batch_messages,
+                    "turn": turn + 1,
                 },
                 model=self.model_name,
                 messages=messages,
@@ -250,6 +239,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
                             "messages": traj["messages"],
                             "terminal": traj["terminal"],
                             "batch_messages": batch_messages,
+                            "turn": 0,
                         },
                         model=self.model_name,
                         messages=traj["messages"],

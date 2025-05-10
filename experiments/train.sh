@@ -62,7 +62,7 @@ python3 -m main \
     trainer.logger=['console','wandb'] \
     trainer.project_name=$PROJECT \
     trainer.experiment_name=$EXPERIMENT \
-    trainer.val_before_train=False \
+    trainer.val_before_train=True \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=1 \
     trainer.save_freq=10 \

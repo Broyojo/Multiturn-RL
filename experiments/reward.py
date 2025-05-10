@@ -8,6 +8,7 @@ todo:
 import json
 import os
 import re
+import traceback
 
 import pytest
 import ray
@@ -153,22 +154,25 @@ def swesmith_reward(step, index, max_workers=4):
 def swebench_reward(step, index, max_workers=4):
     run_id = f"step{step}-n{index}-eval"
     predictions = f"./predictions/predictions_{index}.jsonl"
-    swebench.harness.run_evaluation.main(
-        dataset_name="./data/swebench/swebench.json",
-        split="test",
-        instance_ids=[],
-        predictions_path=predictions,
-        max_workers=max_workers,
-        force_rebuild=False,
-        cache_level="env",
-        clean=False,
-        open_file_limit=4096,
-        run_id=run_id,
-        timeout=1800,
-        namespace="swebench",
-        rewrite_reports=False,
-        modal=False,
-    )
+    try:
+        swebench.harness.run_evaluation.main(
+            dataset_name="./data/swebench/swebench.json",
+            split="test",
+            instance_ids=[],
+            predictions_path=predictions,
+            max_workers=max_workers,
+            force_rebuild=False,
+            cache_level="env",
+            clean=False,
+            open_file_limit=4096,
+            run_id=run_id,
+            timeout=1800,
+            namespace=None,
+            rewrite_reports=False,
+            modal=False,
+        )
+    except Exception:
+        print(traceback.format_exc())  # may have callback issue
     swe_scores = []
     with open(predictions) as f:
         instances = [json.loads(line)[KEY_INSTANCE_ID] for line in f.readlines()]
@@ -212,14 +216,14 @@ def compute_score(
 
     @ray.remote
     def swebench_reward_remote(step, index):
-        return swebench_reward(step, index=index, max_workers=min(0.75 * os.cpu_count(), 24))
+        return swebench_reward(step, index=index, max_workers=os.cpu_count())
 
     if data_sources[0] == "swesmith":
         futures = [swesmith_reward_remote.remote(train_step, i) for i in range(n)]
         swe_scores = ray.get(futures)
         train_step += 1
     elif data_sources[0] == "swebench":
-        futures = [swebench_reward_remote.remote(eval_step, i) for i in range(n)]
+        futures = [swebench_reward_remote.remote(eval_step, 0)]
         swe_scores = ray.get(futures)
         eval_step += 1
     else:

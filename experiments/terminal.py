@@ -14,9 +14,11 @@ class Terminal:
     def __init__(self, image: str, commit: str | None = None):
         self.container = CLIENT.containers.run(
             image,
-            name=f"{image}-{uuid4()}",
-            command="tail -f /dev/null",  # keep the container alive
+            name=f"terminal-{uuid4()}",
+            command="/bin/bash",
             detach=True,
+            tty=True,
+            stdin_open=True,
             platform="linux/x86_64",
             user=DOCKER_USER,
             working_dir=DOCKER_WORKDIR,
@@ -24,30 +26,11 @@ class Terminal:
         if commit is not None:
             git_setup_cmd = f"""git fetch && 
             git checkout {commit} && 
-            git config user.email "you@example.com" && 
-            git config user.name "Your Name" && 
             git branch -D main master || true && 
-            git remote remove origin || true && 
-            git reflog expire --expire=now --all && 
-            git gc --prune=now --aggressive"""
+            git remote remove origin || true"""
             self.exec_run(f"bash -c '{git_setup_cmd}'")
 
-        while True:
-            try:
-                self.socket = self.container.exec_run(
-                    "/bin/bash",
-                    workdir=DOCKER_WORKDIR,
-                    user=DOCKER_USER,
-                    tty=True,
-                    stdin=True,
-                    stdout=True,
-                    stderr=True,
-                    socket=True,
-                ).output
-                break
-            except Exception:
-                print(traceback.format_exc())
-
+        self.socket = self.container.attach_socket(params={"stdin": 1, "stdout": 1, "stderr": 1, "stream": 1})
         self.ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
     def exec_run(self, command):
@@ -59,6 +42,7 @@ class Terminal:
             )
         except Exception:
             print(traceback.format_exc())
+            print(self.container.name)
 
     def _strip_ansi(self, text):
         return self.ansi_escape.sub("", text)
@@ -107,9 +91,6 @@ class Terminal:
         return output_buffer.decode("utf-8", errors="replace")
 
     def __call__(self, input: str, timeout=3):
-        # print("=" * 50)
-        # print(f"typing {repr(input)}")
-
         try:
             self.socket._sock.send(self.encode_input(input))
 
@@ -121,6 +102,7 @@ class Terminal:
             return output
         except Exception:
             print(traceback.format_exc())
+            print(self.container.name)
             return ""
 
     def stop(self, timeout=0):
@@ -142,6 +124,7 @@ class Terminal:
             return result.output.decode("utf-8", errors="replace")
         except Exception:
             print(traceback.format_exc())
+            print(self.container.name)
             return ""
 
 
