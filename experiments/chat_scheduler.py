@@ -108,6 +108,9 @@ def save_predictions(patches, n):
     # Create predictions directory if it doesn't exist
     os.makedirs("predictions", exist_ok=True)
 
+    for file in os.listdir("predictions"):
+        os.remove(os.path.join("predictions", file))
+
     # Stratify the predictions into old_n files
     for file_idx in range(n):
         predictions_for_file = []

@@ -22,6 +22,7 @@ class Terminal:
             platform="linux/x86_64",
             user=DOCKER_USER,
             working_dir=DOCKER_WORKDIR,
+            restart_policy={"Name": "always"},
         )
         if commit is not None:
             git_setup_cmd = f"""git fetch && 
