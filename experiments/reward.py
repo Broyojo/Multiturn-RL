@@ -166,7 +166,7 @@ def swebench_reward(step, index, max_workers=4):
             clean=False,
             open_file_limit=4096,
             run_id=run_id,
-            timeout=1800,
+            timeout=300,  # 5 minute runtime for each
             namespace=None,
             rewrite_reports=False,
             modal=False,
@@ -246,16 +246,13 @@ def compute_score(
             swe_scores_flattened.append(swe_scores[j][i])
 
     format_rewards = [format_reward(solution) for solution in solution_strs]
-    # for i in range(len(format_rewards)):
-    #     print(repr(solution_strs[i]), format_rewards[i])
 
     assert len(format_rewards) == len(swe_scores_flattened)
 
-    rewards = [s + f for s, f in zip(swe_scores_flattened, format_rewards, strict=False)]
-
-    # print(f"swe scores: {swe_scores_flattened}")
-    # print(f"format rewards: {format_rewards}")
-    # print(f"rewards: {rewards}")
+    rewards = [
+        {"score": s, "correctness_reward": s, "format_reward": f}
+        for s, f in zip(swe_scores_flattened, format_rewards, strict=False)
+    ]
 
     return rewards
 

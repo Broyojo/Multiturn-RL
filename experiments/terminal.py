@@ -1,7 +1,9 @@
 import re
 import selectors
+import subprocess
 import time
 import traceback
+from subprocess import Popen
 from uuid import uuid4
 
 import docker
@@ -22,7 +24,7 @@ class Terminal:
             platform="linux/x86_64",
             user=DOCKER_USER,
             working_dir=DOCKER_WORKDIR,
-            restart_policy={"Name": "always"},
+            restart_policy={"Name": "unless-stopped"},
         )
         if commit is not None:
             git_setup_cmd = f"""git fetch && 
@@ -57,7 +59,7 @@ class Terminal:
                     i += 1
                     if i >= len(text):
                         break
-                    if 0 <= (char_ord := ord(text[i])) <= 255:
+                    if 0 <= (char_ord := ord(text[i])) <= 255 and char_ord >= 64:
                         result.append(char_ord - 64)
                 else:
                     if 0 <= (char_ord := ord(text[i])) <= 255:
@@ -106,12 +108,24 @@ class Terminal:
             print(self.container.name)
             return ""
 
-    def stop(self, timeout=0):
+    def stop(self):
         try:
-            self.container.stop(timeout=timeout)
-            self.container.remove(force=True)
+            if hasattr(self, "socket") and self.socket:
+                try:
+                    self.socket._sock.close()
+                except Exception as e:
+                    print(f"Error closing socket: {e}")
+
+            Popen(
+                f"docker stop {self.container.id} -t 15 && docker rm {self.container.id}",
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        #     cleanup_container(CLIENT, self.container)
         except Exception as e:
-            print(f"Error stopping container {self.container.id}: {e}")
+            print(f"Error stopping container: {e}")
+            print(traceback.format_exc())
 
     def get_patch(self, base_commit: str):
         try:

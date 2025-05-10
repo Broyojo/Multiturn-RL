@@ -8,19 +8,17 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import torch
-from joblib import Parallel, delayed
 from omegaconf import DictConfig
 from openai.types.chat.chat_completion import ChatCompletion
 from swebench.harness.constants import KEY_INSTANCE_ID, KEY_MODEL, KEY_PREDICTION
 from tensordict import TensorDict
 from terminal import Terminal
-from tqdm import tqdm
 from transformers import PreTrainedTokenizer
 
 from verl.protocol import DataProto
 from verl.workers.rollout.async_server import ChatCompletionScheduler
 
-MAX_TURNS = 1000
+MAX_TURNS = 50
 
 # silence annoying logs
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -61,27 +59,12 @@ def get_assistant_mask(tokenizer: PreTrainedTokenizer, responses: list[str]) -> 
     return torch.stack(masks)
 
 
-def make_trajectory(messages, extra_info):
-    terminal = Terminal(image=extra_info["docker_image"], commit=extra_info["base_commit"])
-    return {"messages": list(messages), "terminal": terminal, "extra_info": extra_info}
+GLOBAL_POOL = ThreadPoolExecutor(max_workers=128, thread_name_prefix="docker")
 
 
-def make_patch(t, model_name):
-    patch = {
-        KEY_INSTANCE_ID: t["extra_info"]["instance_id"],
-        KEY_MODEL: model_name,
-        KEY_PREDICTION: t["terminal"].get_patch(t["extra_info"]["base_commit"]),
-    }
-    t["terminal"].stop()
-    return patch
-
-
-GLOBAL_POOL = ThreadPoolExecutor(max_workers=512, thread_name_prefix="docker")
-
-
-async def call_terminal(term: Terminal, input: str, timeout=1):
+async def run_in_async(func):
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(GLOBAL_POOL, lambda: term(input=input, timeout=timeout))
+    return await loop.run_in_executor(GLOBAL_POOL, func)
 
 
 def extract_action(response):
@@ -151,21 +134,21 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             kwargs["n"] = 1
             kwargs["temperature"] = 0
 
-        trajectories = Parallel(n_jobs=-1, backend="threading")(
-            delayed(make_trajectory)(messages, extra_info)
-            for messages, extra_info in tqdm(
-                [
-                    (messages, extra_info)
-                    for messages, extra_info in zip(
-                        batch.non_tensor_batch["raw_prompt"],
-                        batch.non_tensor_batch["extra_info"],
-                        strict=False,
-                    )
-                    for _ in range(kwargs["n"])
-                ],
-                desc="Starting containers...",
+        trajectories = [
+            {
+                "messages": list(messages),
+                "terminal": None,
+                "patch": "",
+                "extra_info": extra_info,
+                "turn": 0,
+            }
+            for messages, extra_info in zip(
+                batch.non_tensor_batch["raw_prompt"],
+                batch.non_tensor_batch["extra_info"],
+                strict=False,
             )
-        )
+            for _ in range(kwargs["n"])
+        ]
 
         old_n = kwargs["n"]
         kwargs["n"] = 1
@@ -174,76 +157,67 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
         kwargs.update(sampling_params)
         print(f"[{self.__class__.__name__}] generate_sequences sampling params: {kwargs}")
 
-        async def callback(
-            completions: ChatCompletion,
-            info: dict[str, Any],
-            exception: Exception | None,
-        ):
-            index, messages, terminal, batch_messages, turn = (
-                info["index"],
-                info["messages"].copy(),
-                info["terminal"],
-                info["batch_messages"],
-                info["turn"],
-            )
+        async def callback(completions: ChatCompletion, info: dict[str, Any], exception: Exception | None):
+            traj = info["traj"]
+            messages, turn, extra_info = traj["messages"], traj["turn"], traj["extra_info"]
+
+            if traj["terminal"] is None:
+                traj["terminal"] = await run_in_async(
+                    lambda: Terminal(image=extra_info["docker_image"], commit=extra_info["base_commit"])
+                )
+
+            terminal = traj["terminal"]
+
+            def cleanup():
+                traj["patch"] = {
+                    KEY_INSTANCE_ID: extra_info["instance_id"],
+                    KEY_MODEL: self.model_name,
+                    KEY_PREDICTION: terminal.get_patch(extra_info["base_commit"]),
+                }
+                terminal.stop()
 
             if turn > MAX_TURNS or exception is not None:
-                # this may be from the terminal output overstepping the context length.
-                # in this case, we just return the messages but don't include the terminal output
-                # print(f"Callback exception: {exception}")
-                batch_messages[index] = messages[:-1]
+                messages.pop()
+                await run_in_async(cleanup)
                 return
 
             response = completions.choices[0]
             messages.append({"role": response.message.role, "content": response.message.content})
 
             if response.finish_reason == "length":
-                batch_messages[index] = messages
+                await run_in_async(cleanup)
                 return
 
             action = extract_action(response.message.content)
             if action is None:
-                batch_messages[index] = messages
+                await run_in_async(cleanup)
                 return
 
             messages[-1]["content"] += "</terminal>"
 
-            output = await call_terminal(terminal, action, timeout=1)
+            output = await run_in_async(lambda: terminal(action, timeout=1))
             messages.append(
                 {
                     "role": "user",
                     "content": f"<terminal_output>{output}</terminal_output>",
                 }
             )
-            # print("*************** <terminal> call :", messages)
+            traj["turn"] += 1
             await self.submit_chat_completions(
                 callback=callback,
-                callback_additional_info={
-                    "index": index,
-                    "messages": messages,
-                    "terminal": terminal,
-                    "batch_messages": batch_messages,
-                    "turn": turn + 1,
-                },
+                callback_additional_info={"traj": traj},
                 model=self.model_name,
                 messages=messages,
                 **kwargs,
             )
 
         tasks = []
-        batch_messages = [None] * len(trajectories)
-        for i, traj in enumerate(trajectories):
+        for traj in trajectories:
             tasks.append(
                 asyncio.create_task(
                     self.submit_chat_completions(
                         callback=callback,
-                        callback_additional_info={
-                            "index": i,
-                            "messages": traj["messages"],
-                            "terminal": traj["terminal"],
-                            "batch_messages": batch_messages,
-                            "turn": 0,
-                        },
+                        callback_additional_info={"traj": traj},
                         model=self.model_name,
                         messages=traj["messages"],
                         **kwargs,
@@ -253,13 +227,9 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
         await asyncio.gather(*tasks)
         print(f"[{self.__class__.__name__}] generate_sequences done")
 
-        patches = Parallel(n_jobs=-1, backend="threading")(
-            delayed(make_patch)(traj, self.model_name) for traj in tqdm(trajectories, desc="Extracting patches...")
-        )
+        save_predictions([traj["patch"] for traj in trajectories], old_n)
 
-        save_predictions(patches, old_n)
-
-        return self._postprocess(batch, batch_messages, old_n)
+        return self._postprocess(batch, [traj["messages"] for traj in trajectories], old_n)
 
     def _postprocess(self, batch: DataProto, batch_messages: list[list[dict[str, str]]], n: int) -> DataProto:
         # prompts: left pad
