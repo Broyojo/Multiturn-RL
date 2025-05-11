@@ -1,14 +1,14 @@
-import docker
 import os
 import re
 import shutil
 import traceback
-
-from docker.models.containers import Container
 from functools import lru_cache
 from logging import Logger
 from multiprocessing import Lock
 from pathlib import Path
+
+import docker
+from docker.models.containers import Container
 from swebench.harness.constants import (
     APPLY_PATCH_FAIL,
     APPLY_PATCH_PASS,
@@ -30,6 +30,8 @@ from swebench.harness.docker_utils import (
     exec_run_with_timeout,
 )
 from swebench.harness.utils import EvaluationError
+from unidiff import PatchSet
+
 from swesmith.bug_gen.mirror.generate import INSTANCE_REF
 from swesmith.constants import (
     ENV_NAME,
@@ -50,8 +52,6 @@ from swesmith.utils import (
     get_repo_name,
     get_test_paths,
 )
-from unidiff import PatchSet
-
 
 repo_lock = Lock()
 
@@ -234,7 +234,7 @@ def run_patch_in_container(
         tuple[Logger, bool]: logger and whether the container timed out or None if an error occurred
     """
     container = None
-    client = docker.from_env()
+    client = docker.from_env(timeout=300)
     instance_id = instance[KEY_INSTANCE_ID]
     image_name = instance[KEY_IMAGE_NAME]
     try:
@@ -323,7 +323,7 @@ def run_patch_in_container(
             f"{traceback.format_exc()}\n"
             f"Check ({logger.log_file}) for more information."
         )
-        logger.info(error_msg)
+        logger.error(error_msg)
         print(f"Error validating {instance_id}: {e}")
 
         # Remove instance container + image, close logger

@@ -1,20 +1,18 @@
-"""
-todo:
-- run with BatchRewardManager so we can take in the whole batch in compute_score
-- allow extra_info to always be passed, not just in validation stage. this way we can know what docker container to use for the data sample
-- for all the swebench problems in the batch, we run the swebench evaluation script on them and extract the reward
-"""
-
 import json
 import os
 import re
-import traceback
+import resource
+from typing import cast
+from uuid import uuid4
 
+import docker
 import pytest
 import ray
-import swebench.harness.run_evaluation
+import swebench
+import swebench.harness
 import swesmith.harness.eval
-from swebench.harness.constants import KEY_INSTANCE_ID
+from swebench.harness.constants import KEY_INSTANCE_ID, SWEbenchInstance
+from swebench.harness.test_spec.test_spec import make_test_spec
 
 
 def format_reward(solution_str: str):
@@ -26,56 +24,33 @@ def format_reward(solution_str: str):
     <output>...</output><|im_end|>
     <|im_start|>assistant
     <think>ok seems like pretty interesting</think><answer>the answer is this \boxed{thing}</answer><|im_end|>
-
-    steps:
-    1. check format
-    2. run swebench evaluator on patch files
-    3. get scores
-    4. return scores
-
-    Rules:
-    - Each assistant message must have exactly one <think> block
-    - After <think> block, must have either a <terminal> or <answer> block
-    - If an <answer> block is present, it must be in the last assistant message
-    - No text outside the brackets
-    - No nested brackets
-    - No mismatched brackets
     """
 
     solution_str = "<|im_start|>assistant\n" + solution_str
 
-    # extract the inner content of each assistant block
     blocks = re.findall(r"<\|im_start\|>assistant\n(.*?)<\|im_end\|>", solution_str, re.S)
     if not blocks:
         return 0
 
     for i, block in enumerate(blocks):
-        # Strip whitespace for checking
         clean_block = block.strip()
 
-        # Check for exactly one <think> block per assistant message
         think_blocks = re.findall(r"<think>.*?</think>", clean_block, re.S)
         if len(think_blocks) != 1:
             return 0
 
-        # Check for terminal and answer blocks
         terminal_blocks = re.findall(r"<terminal>.*?</terminal>", clean_block, re.S)
         answer_blocks = re.findall(r"<answer>.*?</answer>", clean_block, re.S)
 
-        # Check for multiple answer blocks - should never be more than 1
         if len(answer_blocks) > 1:
             return 0
 
-        # Must have either one terminal or one answer block, not both and not zero
         if len(terminal_blocks) + len(answer_blocks) != 1:
             return 0
 
-        # If this is not the last block and has an answer, it's invalid
         if i < len(blocks) - 1 and len(answer_blocks) == 1:
             return 0
 
-        # Check for nesting brackets using a different approach
-        # If we find a tag start inside content of another tag, it's nested
         for tag in ["think", "terminal", "answer"]:
             pattern = f"<{tag}>(.*?)</{tag}>"
             for match in re.finditer(pattern, clean_block, re.S):
@@ -83,25 +58,20 @@ def format_reward(solution_str: str):
                 if re.search(r"<think>|<terminal>|<answer>", content):
                     return 0
 
-        # Check for any mismatched brackets
         open_tags = re.findall(r"<(think|terminal|answer)>", clean_block)
         close_tags = re.findall(r"</(think|terminal|answer)>", clean_block)
 
-        # Check if number of open and close tags match
         if len(open_tags) != len(close_tags):
             return 0
 
-        # Check if each open tag has a matching close tag in the right order
         for j in range(len(open_tags)):
             if open_tags[j] != close_tags[j]:
                 return 0
 
-        # Check that the entire block is just <think></think> followed by <terminal></terminal> or <answer></answer>
         valid_pattern = r"^\s*<think>.*?</think>\s*(<terminal>.*?</terminal>|<answer>.*?</answer>)\s*$"
         if not re.match(valid_pattern, clean_block, re.S):
             return 0
 
-    # Last message must have an answer
     last_block = blocks[-1].strip()
     if not re.search(r"<answer>.*?</answer>", last_block, re.S):
         return 0
@@ -122,138 +92,88 @@ def normalized_score(report):
     return score
 
 
-def swesmith_reward(step, index, max_workers=4):
-    run_id = f"step{step}-n{index}-train"
-    predictions = f"./predictions/predictions_{index}.jsonl"
-    swesmith.harness.eval.main(
-        dataset_path="./data/swebench/swesmith.jsonl",
-        predictions_path=predictions,
-        run_id=run_id,
-        max_workers=max_workers,
-    )
-    swe_scores = []
-    with open(predictions) as f:
-        instances = [json.loads(line)[KEY_INSTANCE_ID] for line in f.readlines()]
-    for instance in instances:
-        if "report.json" not in os.listdir(f"./logs/run_evaluation/{run_id}/{instance}"):
-            swe_scores.append(0)
-            continue
-
-        with open(f"./logs/run_evaluation/{run_id}/{instance}/report.json") as f:
-            report = json.load(f)
-
-        if "tests_status" not in report:
-            swe_scores.append(0)
-            continue
-
-        score = normalized_score(report)
-        swe_scores.append(score)
-    return swe_scores
-
-
-def swebench_reward(step, index, max_workers=4):
-    run_id = f"step{step}-n{index}-eval"
-    predictions = f"./predictions/predictions_{index}.jsonl"
-    try:
-        swebench.harness.run_evaluation.main(
-            dataset_name="./data/swebench/swebench.json",
-            split="test",
-            instance_ids=[],
-            predictions_path=predictions,
-            max_workers=max_workers,
-            force_rebuild=False,
-            cache_level="env",
-            clean=False,
-            open_file_limit=4096,
-            run_id=run_id,
-            timeout=300,  # 5 minute runtime for each
-            namespace=None,
-            rewrite_reports=False,
-            modal=False,
-        )
-    except Exception:
-        print(traceback.format_exc())  # may have callback issue
-    swe_scores = []
-    with open(predictions) as f:
-        instances = [json.loads(line)[KEY_INSTANCE_ID] for line in f.readlines()]
-
-    extra_model_dir = [x for x in os.listdir(f"./logs/run_evaluation/{run_id}/") if not x.endswith(".json")][0]
-    for instance in instances:
-        if "report.json" not in os.listdir(f"./logs/run_evaluation/{run_id}/{extra_model_dir}/{instance}"):
-            swe_scores.append(0)
-            continue
-
-        with open(f"./logs/run_evaluation/{run_id}/{extra_model_dir}/{instance}/report.json") as f:
-            report = json.load(f)[instance]
-
-        if "tests_status" not in report:
-            swe_scores.append(0)
-            continue
-
-        score = normalized_score(report)
-        swe_scores.append(score)
-    return swe_scores
-
-
 train_step = 1
 eval_step = 1
+
+
+@ray.remote
+def swesmith_eval(patch, data_row):
+    assert patch[KEY_INSTANCE_ID] == data_row[KEY_INSTANCE_ID]
+
+    run_id = f"step{train_step}-{patch[KEY_INSTANCE_ID]}-train-{uuid4()}"
+    instance_id = patch[KEY_INSTANCE_ID]
+
+    swesmith.harness.eval.run_evaluation(pred=patch, instance=data_row, run_id=run_id)
+
+    if "report.json" not in os.listdir(f"./logs/run_evaluation/{run_id}/{instance_id}"):
+        return 0
+
+    with open(f"./logs/run_evaluation/{run_id}/{instance_id}/report.json") as f:
+        report = json.load(f)
+
+    if "tests_status" not in report:
+        return 0
+
+    return normalized_score(report)
+
+
+@ray.remote
+def swebench_eval(patch, data_row):
+    assert patch[KEY_INSTANCE_ID] == data_row[KEY_INSTANCE_ID]
+
+    run_id = f"step{train_step}-{patch[KEY_INSTANCE_ID]}-eval-{uuid4()}"
+    instance_id = patch[KEY_INSTANCE_ID]
+
+    client = docker.from_env(timeout=300)
+    test_spec = make_test_spec(cast(SWEbenchInstance, data_row), namespace=None, instance_image_tag="latest")
+    result = swebench.harness.run_evaluation.run_instance(
+        test_spec=test_spec,
+        pred=patch,
+        rm_image=False,
+        force_rebuild=False,
+        client=client,
+        run_id=run_id,
+        timeout=300,
+        rewrite_reports=False,
+    )
+    if result is None:
+        return 0
+
+    report = result[1][instance_id]
+    if "tests_status" not in report:
+        return 0
+
+    return normalized_score(report)
 
 
 def compute_score(
     data_sources: list[str],
     solution_strs: list[str],
-    ground_truths: list[str],
+    patches: list[dict],
+    instances: list[dict],
     extra_infos: list[dict],
     **reward_kwargs,
 ):
+    resource.setrlimit(resource.RLIMIT_NOFILE, (4096, 4096))
+
     global train_step, eval_step
 
-    n = len(os.listdir("./predictions"))
-
-    @ray.remote
-    def swesmith_reward_remote(step, index):
-        return swesmith_reward(step, index=index, max_workers=8)
-
-    @ray.remote
-    def swebench_reward_remote(step, index):
-        return swebench_reward(step, index=index, max_workers=os.cpu_count())
-
     if data_sources[0] == "swesmith":
-        futures = [swesmith_reward_remote.remote(train_step, i) for i in range(n)]
+        futures = [swesmith_eval.remote(patch, instance) for patch, instance in zip(patches, instances, strict=True)]
         swe_scores = ray.get(futures)
         train_step += 1
     elif data_sources[0] == "swebench":
-        futures = [swebench_reward_remote.remote(eval_step, 0)]
+        futures = [swebench_eval.remote(patch, instance) for patch, instance in zip(patches, instances, strict=True)]
         swe_scores = ray.get(futures)
         eval_step += 1
     else:
         raise ValueError(f"unknown data source: {data_sources[0]}")
 
-    for i in range(n):
-        os.remove(f"./predictions/predictions_{i}.jsonl")
-
-    # swe_scores: [[a,b,c,d], [a,b,c,d], [a,b,c,d]] (n x B)
-    # swe_scores_flattened: [a,a,a,b,b,b,c,c,c,d,d,d] (nB)
-
-    # 0,0 1,0 2,0
-    # 0,1 1,1 2,1
-    # 0,2 1,2 2,2
-    # 0,3 1,3 2,3
-
-    swe_scores_flattened = []
-    for i in range(len(swe_scores[0])):
-        for j in range(n):
-            swe_scores_flattened.append(swe_scores[j][i])
-
     format_rewards = [format_reward(solution) for solution in solution_strs]
-
-    assert len(format_rewards) == len(swe_scores_flattened)
-
     rewards = [
-        {"score": s, "correctness_reward": s, "format_reward": f}
-        for s, f in zip(swe_scores_flattened, format_rewards, strict=False)
+        {"score": s, "correctness_reward": s, "format_reward": f, "patch": p, "instance": i}
+        for s, f, p, i in zip(swe_scores, format_rewards, patches, instances, strict=True)
     ]
-
     return rewards
 
 

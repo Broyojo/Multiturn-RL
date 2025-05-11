@@ -1,12 +1,11 @@
 import asyncio
-import json
 import logging
-import os
 import re
-from collections import defaultdict
+import resource
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+import numpy as np
 import torch
 from omegaconf import DictConfig
 from openai.types.chat.chat_completion import ChatCompletion
@@ -19,6 +18,8 @@ from verl.protocol import DataProto
 from verl.workers.rollout.async_server import ChatCompletionScheduler
 
 MAX_TURNS = 50
+
+resource.setrlimit(resource.RLIMIT_NOFILE, (4096, 4096))
 
 # silence annoying logs
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -75,39 +76,24 @@ def extract_action(response):
     return response[last_opening + 10 :]
 
 
-def save_predictions(patches, n):
-    """
-    need to save several prediction files (N of them) since all instance ids must be unique.
-    so, if we have GRPO, we generate n trajectories for each problem, so we need to have N predictinos for each instance
-    maybe run the swesmith evaluator in parallel across each of the N prediction files
-    """
+# def save_predictions(patches, n):
+#     # patches: [a, a, a, b, b, b, c, c, c, d, d, d]
+#     # patch files: [[a, b, c, d], [a, b, c, d], [a, b, c, d]]
 
-    # Group patches by instance_id
-    patches_by_instance = defaultdict(list)
-    for patch in patches:
-        instance_id = patch[KEY_INSTANCE_ID]
-        patches_by_instance[instance_id].append(patch)
+#     patch_files = [[] for _ in range(n)]
 
-    # Create predictions directory if it doesn't exist
-    os.makedirs("predictions", exist_ok=True)
+#     os.makedirs("predictions", exist_ok=True)
 
-    for file in os.listdir("predictions"):
-        os.remove(os.path.join("predictions", file))
+#     for file in os.listdir("predictions"):
+#         os.remove(os.path.join("predictions", file))
 
-    # Stratify the predictions into old_n files
-    for file_idx in range(n):
-        predictions_for_file = []
+#     for i, patch in enumerate(patches):
+#         patch_files[i % n].append(patch)
 
-        # Add one prediction per instance_id to this file
-        for instance_id, instance_patches in patches_by_instance.items():
-            if file_idx < len(instance_patches):
-                predictions_for_file.append(instance_patches[file_idx])
-
-        # Write this file's predictions
-        output_path = f"predictions/predictions_{file_idx}.jsonl"
-        with open(output_path, "w") as f:
-            for patch in predictions_for_file:
-                f.write(json.dumps(patch) + "\n")
+#     for i, patch_file in enumerate(patch_files):
+#         with open(f"predictions/predictions_{i}.jsonl", "w") as f:
+#             for patch in patch_file:
+#                 f.write(json.dumps(patch) + "\n")
 
 
 class TerminalChatCompletionScheduler(ChatCompletionScheduler):
@@ -159,24 +145,18 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
 
         async def callback(completions: ChatCompletion, info: dict[str, Any], exception: Exception | None):
             traj = info["traj"]
-            messages, turn, extra_info = traj["messages"], traj["turn"], traj["extra_info"]
-
-            if traj["terminal"] is None:
-                traj["terminal"] = await run_in_async(
-                    lambda: Terminal(image=extra_info["docker_image"], commit=extra_info["base_commit"])
-                )
-
-            terminal = traj["terminal"]
+            messages, terminal, extra_info = traj["messages"], traj["terminal"], traj["extra_info"]
 
             def cleanup():
                 traj["patch"] = {
                     KEY_INSTANCE_ID: extra_info["instance_id"],
                     KEY_MODEL: self.model_name,
-                    KEY_PREDICTION: terminal.get_patch(extra_info["base_commit"]),
+                    KEY_PREDICTION: terminal.get_patch(extra_info["base_commit"]) if terminal is not None else "",
                 }
-                terminal.stop()
+                if terminal is not None:
+                    terminal.stop()
 
-            if turn > MAX_TURNS or exception is not None:
+            if exception is not None:
                 messages.pop()
                 await run_in_async(cleanup)
                 return
@@ -195,6 +175,17 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
 
             messages[-1]["content"] += "</terminal>"
 
+            traj["turn"] += 1
+            if traj["turn"] > MAX_TURNS:
+                await run_in_async(cleanup)
+                return
+
+            if terminal is None:
+                traj["terminal"] = await run_in_async(
+                    lambda: Terminal(image=extra_info["docker_image"], commit=extra_info["base_commit"])
+                )
+                terminal = traj["terminal"]
+
             output = await run_in_async(lambda: terminal(action, timeout=1))
             messages.append(
                 {
@@ -202,7 +193,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
                     "content": f"<terminal_output>{output}</terminal_output>",
                 }
             )
-            traj["turn"] += 1
+
             await self.submit_chat_completions(
                 callback=callback,
                 callback_additional_info={"traj": traj},
@@ -227,11 +218,20 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
         await asyncio.gather(*tasks)
         print(f"[{self.__class__.__name__}] generate_sequences done")
 
-        save_predictions([traj["patch"] for traj in trajectories], old_n)
+        messages = [traj["messages"] for traj in trajectories]
+        patches = [traj["patch"] for traj in trajectories]
+        instances = [traj["extra_info"]["data_row"] for traj in trajectories]
 
-        return self._postprocess(batch, [traj["messages"] for traj in trajectories], old_n)
+        return self._postprocess(batch=batch, batch_messages=messages, patches=patches, instances=instances, n=old_n)
 
-    def _postprocess(self, batch: DataProto, batch_messages: list[list[dict[str, str]]], n: int) -> DataProto:
+    def _postprocess(
+        self,
+        batch: DataProto,
+        batch_messages: list[list[dict[str, str]]],
+        patches: list[dict],
+        instances: list[dict],
+        n: int,
+    ) -> DataProto:
         # prompts: left pad
         # responses: right pad
         # input_ids: prompt + response
@@ -274,7 +274,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             batch_size=len(input_ids),
         )
 
-        return DataProto(batch=batch)
+        return DataProto(batch=batch, non_tensor_batch={"patches": np.array(patches), "instances": np.array(instances)})
 
 
 class NaiveChatCompletionScheduler(ChatCompletionScheduler):

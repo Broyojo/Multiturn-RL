@@ -71,6 +71,7 @@ def build_swesmith_train(ds):
                     "base_commit": d["base_commit"],
                     "instance_id": d["instance_id"],
                     "docker_image": d["image_name"],
+                    "data_row": d,
                 },
             }
         )
@@ -104,6 +105,7 @@ def build_swebench_test(dataset, split):
                     "base_commit": d["base_commit"],
                     "instance_id": d["instance_id"],
                     "docker_image": image_map[d["instance_id"]].instance_image_key,
+                    "data_row": d,
                 },
             }
         )

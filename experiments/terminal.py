@@ -9,7 +9,7 @@ from uuid import uuid4
 import docker
 from swebench.harness.constants import DOCKER_USER, DOCKER_WORKDIR
 
-CLIENT = docker.from_env(max_pool_size=1024, timeout=300)
+CLIENT = docker.from_env(timeout=300, max_pool_size=1024)
 
 
 class Terminal:

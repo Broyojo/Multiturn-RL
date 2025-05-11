@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import docker
 import json
 import platform
 import traceback
 
+import docker
+
 if platform.system() == "Linux":
     import resource
 
-from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path, PurePosixPath
 
 from swebench.harness.constants import (
@@ -21,11 +22,18 @@ from swebench.harness.constants import (
     KEY_INSTANCE_ID,
     KEY_MODEL,
     KEY_PREDICTION,
-    LOG_REPORT,
     LOG_INSTANCE,
+    LOG_REPORT,
     LOG_TEST_OUTPUT,
     RUN_EVALUATION_LOG_DIR,
     UTF8,
+)
+from swebench.harness.docker_build import (
+    BuildImageError,
+    build_container,
+    build_env_images,
+    close_logger,
+    setup_logger,
 )
 from swebench.harness.docker_utils import (
     clean_images,
@@ -36,24 +44,17 @@ from swebench.harness.docker_utils import (
     remove_image,
     should_remove,
 )
-from swebench.harness.docker_build import (
-    BuildImageError,
-    build_container,
-    build_env_images,
-    close_logger,
-    setup_logger,
-)
 from swebench.harness.grading import get_eval_report
-from swebench.harness.reporting import make_run_report
 from swebench.harness.modal_eval import (
     run_instances_modal,
     validate_modal_credentials,
 )
-from swebench.harness.test_spec.test_spec import make_test_spec, TestSpec
+from swebench.harness.reporting import make_run_report
+from swebench.harness.test_spec.test_spec import TestSpec, make_test_spec
 from swebench.harness.utils import (
     EvaluationError,
-    load_swebench_dataset,
     get_predictions_from_file,
+    load_swebench_dataset,
     run_threadpool,
     str2bool,
 )
@@ -288,7 +289,7 @@ def run_instances(
         run_id (str): Run ID
         timeout (int): Timeout for running tests
     """
-    client = docker.from_env()
+    client = docker.from_env(timeout=300)
     test_specs = list(
         map(
             lambda instance: make_test_spec(
@@ -368,10 +369,10 @@ def get_dataset_from_preds(
     prediction_ids = set(predictions.keys())
     if prediction_ids - dataset_ids:
         raise ValueError(
-            (
+            
                 "Some prediction IDs not found in dataset!"
                 f"\nMissing IDs:\n{' '.join(prediction_ids - dataset_ids)}"
-            )
+            
         )
     if instance_ids:
         dataset = [i for i in dataset if i[KEY_INSTANCE_ID] in instance_ids]

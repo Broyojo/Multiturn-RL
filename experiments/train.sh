@@ -6,14 +6,16 @@ export WANDB_API_KEY="121d8f0d656e06f7ebd1c51e71e4dbcdb654af8e"
 # TODO: set this up for hyparameter optimization
 
 # Hyperparamaters
-MODEL="Qwen/Qwen2.5-7B-Instruct"
-PROJECT="multiturn-rl"
-EXPERIMENT="$MODEL-swe-terminal"
+export MODEL="Qwen/Qwen2.5-7B-Instruct"
+export PROJECT="multiturn-rl"
+export EXPERIMENT="$MODEL-swe-terminal-fixed"
 
 # to enable wandb resuming:
 # RUN_ID=$(echo -n "$EXPERIMENT" | md5sum | cut -c1-8)
 # export WANDB_RESUME=allow
 # export WANDB_RUN_ID="$RUN_ID"
+
+export DOCKER_CLIENT_TIMEOUT=300
 
 run_training_job() {
     python3 -m main \
@@ -34,8 +36,8 @@ run_training_job() {
         actor_rollout_ref.actor.use_dynamic_bsz=True \
         actor_rollout_ref.actor.ppo_max_token_len_per_gpu=32768 \
         actor_rollout_ref.actor.ulysses_sequence_parallel_size=4 \
-        actor_rollout_ref.actor.use_kl_loss=False \
-        actor_rollout_ref.actor.kl_loss_coef=0.0 \
+        actor_rollout_ref.actor.use_kl_loss=True \
+        actor_rollout_ref.actor.kl_loss_coef=0.001 \
         actor_rollout_ref.actor.kl_loss_type=low_var_kl \
         actor_rollout_ref.actor.entropy_coeff=0 \
         actor_rollout_ref.model.enable_gradient_checkpointing=True \
@@ -57,6 +59,7 @@ run_training_job() {
         actor_rollout_ref.rollout.free_cache_engine=False \
         actor_rollout_ref.ref.fsdp_config.param_offload=True \
         actor_rollout_ref.ref.log_prob_max_token_len_per_gpu=131072 \
+        reward_model.launch_reward_fn_async=True \
         algorithm.use_kl_in_reward=False \
         trainer.critic_warmup=0 \
         trainer.rollout_data_dir=./rollouts/train \
