@@ -76,26 +76,6 @@ def extract_action(response):
     return response[last_opening + 10 :]
 
 
-# def save_predictions(patches, n):
-#     # patches: [a, a, a, b, b, b, c, c, c, d, d, d]
-#     # patch files: [[a, b, c, d], [a, b, c, d], [a, b, c, d]]
-
-#     patch_files = [[] for _ in range(n)]
-
-#     os.makedirs("predictions", exist_ok=True)
-
-#     for file in os.listdir("predictions"):
-#         os.remove(os.path.join("predictions", file))
-
-#     for i, patch in enumerate(patches):
-#         patch_files[i % n].append(patch)
-
-#     for i, patch_file in enumerate(patch_files):
-#         with open(f"predictions/predictions_{i}.jsonl", "w") as f:
-#             for patch in patch_file:
-#                 f.write(json.dumps(patch) + "\n")
-
-
 class TerminalChatCompletionScheduler(ChatCompletionScheduler):
     def __init__(
         self,
