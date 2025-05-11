@@ -34,13 +34,14 @@ run_training_job() {
         actor_rollout_ref.model.use_remove_padding=True \
         actor_rollout_ref.actor.ppo_mini_batch_size=32 \
         actor_rollout_ref.actor.use_dynamic_bsz=True \
-        actor_rollout_ref.actor.ppo_max_token_len_per_gpu=32768 \
+        actor_rollout_ref.actor.ppo_max_token_len_per_gpu=16384 \
         actor_rollout_ref.actor.ulysses_sequence_parallel_size=4 \
         actor_rollout_ref.actor.use_kl_loss=True \
         actor_rollout_ref.actor.kl_loss_coef=0.001 \
         actor_rollout_ref.actor.kl_loss_type=low_var_kl \
         actor_rollout_ref.actor.entropy_coeff=0 \
         actor_rollout_ref.model.enable_gradient_checkpointing=True \
+        actor_rollout_ref.model.use_liger=True \
         actor_rollout_ref.actor.fsdp_config.param_offload=False \
         actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
         actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
@@ -58,7 +59,7 @@ run_training_job() {
         actor_rollout_ref.rollout.enforce_eager=False \
         actor_rollout_ref.rollout.free_cache_engine=False \
         actor_rollout_ref.ref.fsdp_config.param_offload=True \
-        actor_rollout_ref.ref.log_prob_max_token_len_per_gpu=131072 \
+        actor_rollout_ref.ref.log_prob_max_token_len_per_gpu=65536 \
         reward_model.launch_reward_fn_async=True \
         algorithm.use_kl_in_reward=False \
         trainer.critic_warmup=0 \
@@ -67,7 +68,7 @@ run_training_job() {
         trainer.logger=['console','wandb'] \
         trainer.project_name=$PROJECT \
         trainer.experiment_name=$EXPERIMENT \
-        trainer.val_before_train=True \
+        trainer.val_before_train=False \
         trainer.n_gpus_per_node=8 \
         trainer.nnodes=1 \
         trainer.save_freq=5 \

@@ -171,8 +171,8 @@ def compute_score(
 
     format_rewards = [format_reward(solution) for solution in solution_strs]
     rewards = [
-        {"score": s, "correctness_reward": s, "format_reward": f, "patch": p, "instance": i}
-        for s, f, p, i in zip(swe_scores, format_rewards, patches, instances, strict=True)
+        {"score": s + f, "correctness_reward": s, "format_reward": f}
+        for s, f in zip(swe_scores, format_rewards, strict=True)
     ]
     return rewards
 
