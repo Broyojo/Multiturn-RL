@@ -3,17 +3,9 @@ set -e
 export VLLM_USE_V1=1
 export WANDB_API_KEY="121d8f0d656e06f7ebd1c51e71e4dbcdb654af8e"
 
-# TODO: set this up for hyparameter optimization
-
-# Hyperparamaters
-export MODEL="Qwen/Qwen2.5-7B-Instruct"
+export MODEL="all-hands/openhands-lm-7b-v0.1"
 export PROJECT="multiturn-rl"
-export EXPERIMENT="$MODEL-swe-terminal-fixed"
-
-# to enable wandb resuming:
-# RUN_ID=$(echo -n "$EXPERIMENT" | md5sum | cut -c1-8)
-# export WANDB_RESUME=allow
-# export WANDB_RUN_ID="$RUN_ID"
+export EXPERIMENT="$MODEL-swe-terminal-bs16-gs8-no_format-reward_hack_fix-reward_async-dapo-filtered-kl1e-3-temp0.6"
 
 export DOCKER_CLIENT_TIMEOUT=300
 
@@ -22,8 +14,9 @@ run_training_job() {
         algorithm.adv_estimator=grpo \
         data.train_files=data/swebench/train.parquet \
         data.val_files=data/swebench/test.parquet \
+        data.seed=42 \
         data.return_raw_chat=True \
-        data.train_batch_size=64 \
+        data.train_batch_size=16 \
         data.max_prompt_length=8192 \
         data.max_response_length=8192 \
         data.filter_overlong_prompts=True \
@@ -32,7 +25,7 @@ run_training_job() {
         actor_rollout_ref.model.path=$MODEL \
         actor_rollout_ref.actor.optim.lr=1e-6 \
         actor_rollout_ref.model.use_remove_padding=True \
-        actor_rollout_ref.actor.ppo_mini_batch_size=32 \
+        actor_rollout_ref.actor.ppo_mini_batch_size=16 \
         actor_rollout_ref.actor.use_dynamic_bsz=True \
         actor_rollout_ref.actor.ppo_max_token_len_per_gpu=16384 \
         actor_rollout_ref.actor.ulysses_sequence_parallel_size=4 \
@@ -40,6 +33,8 @@ run_training_job() {
         actor_rollout_ref.actor.kl_loss_coef=0.001 \
         actor_rollout_ref.actor.kl_loss_type=low_var_kl \
         actor_rollout_ref.actor.entropy_coeff=0 \
+        actor_rollout_ref.actor.clip_ratio_low=0.2 \
+        actor_rollout_ref.actor.clip_ratio_high=0.28 \
         actor_rollout_ref.model.enable_gradient_checkpointing=True \
         actor_rollout_ref.model.use_liger=True \
         actor_rollout_ref.actor.fsdp_config.param_offload=False \
@@ -48,11 +43,11 @@ run_training_job() {
         actor_rollout_ref.rollout.name=vllm \
         actor_rollout_ref.rollout.mode=async \
         actor_rollout_ref.rollout.chat_scheduler=chat_scheduler.TerminalChatCompletionScheduler \
-        actor_rollout_ref.rollout.gpu_memory_utilization=0.5 \
+        actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
         actor_rollout_ref.rollout.n=8 \
-        actor_rollout_ref.rollout.temperature=1.0 \
-        actor_rollout_ref.rollout.top_p=1.0 \
-        actor_rollout_ref.rollout.top_k=-1 \
+        actor_rollout_ref.rollout.temperature=0.6 \
+        actor_rollout_ref.rollout.top_p=0.9 \
+        actor_rollout_ref.rollout.max_turns=50 \
         actor_rollout_ref.rollout.max_model_len=16384 \
         actor_rollout_ref.rollout.max_num_batched_tokens=16384 \
         actor_rollout_ref.rollout.max_num_seqs=512 \
@@ -63,15 +58,15 @@ run_training_job() {
         reward_model.launch_reward_fn_async=True \
         algorithm.use_kl_in_reward=False \
         trainer.critic_warmup=0 \
-        trainer.rollout_data_dir=./rollouts/train \
-        trainer.validation_data_dir=./rollouts/validation \
+        trainer.rollout_data_dir=./rollouts/train/run10-30 \
+        trainer.validation_data_dir=./rollouts/validation/run10-30 \
         trainer.logger=['console','wandb'] \
         trainer.project_name=$PROJECT \
         trainer.experiment_name=$EXPERIMENT \
-        trainer.val_before_train=False \
+        trainer.val_before_train=True \
         trainer.n_gpus_per_node=8 \
         trainer.nnodes=1 \
-        trainer.save_freq=5 \
+        trainer.save_freq=10 \
         trainer.test_freq=10 \
         trainer.total_epochs=1 $@
     return $?

@@ -49,16 +49,14 @@ class RewardManager:
             response_str = self.tokenizer.decode(valid_response_ids, skip_special_tokens=False)
             responses_str.append(response_str)
 
-        patches = data.non_tensor_batch["patches"]
-        instances = data.non_tensor_batch["instances"]
+        scores = data.non_tensor_batch["scores"]
         data_sources = data.non_tensor_batch[self.reward_fn_key]
         extras = data.non_tensor_batch.get("extra_info", [None] * len(data))
 
         scores = self.compute_score(
             data_sources=data_sources,
             solution_strs=responses_str,
-            patches=patches,
-            instances=instances,
+            scores=scores,
             extra_infos=extras,
             **self.reward_kwargs,
         )

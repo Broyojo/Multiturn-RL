@@ -30,7 +30,8 @@ class Terminal:
             git_setup_cmd = f"""git fetch && 
             git checkout {commit} && 
             git branch -D main master || true && 
-            git remote remove origin || true"""
+            git remote remove origin || true &&
+            git checkout -b main"""
             self.exec_run(f"bash -c '{git_setup_cmd}'")
 
         self.socket = self.container.attach_socket(params={"stdin": 1, "stdout": 1, "stderr": 1, "stream": 1})
@@ -94,6 +95,9 @@ class Terminal:
         return output_buffer.decode("utf-8", errors="replace")
 
     def __call__(self, input: str, timeout=3):
+        if self._is_reward_hacking(input):
+            return "Error: This operation is not permitted in this environment. Please use the given repo and code."
+
         try:
             self.socket._sock.send(self.encode_input(input))
 
@@ -126,6 +130,27 @@ class Terminal:
         except Exception as e:
             print(f"Error stopping container: {e}")
             print(traceback.format_exc())
+
+    def _is_reward_hacking(self, input: str) -> bool:
+        """Check if the input contains reward hacking to download correct code from github/gitlab"""
+        input_lower = input.lower()
+        if "git clone" in input_lower:
+            return True
+
+        clone_patterns = [
+            r"git\s+clone\s+",
+            r"clone\s+.*\.git",
+            r"git\s+.*\s+clone",
+            r"github\.com/[^/]+/[^/\s]+",
+            r"gitlab\.com/[^/]+/[^/\s]+",
+            r"raw\.githubusercontent\.com/[^/]+/[^/\s]+",
+        ]
+
+        for pattern in clone_patterns:
+            if re.search(pattern, input_lower):
+                return True
+
+        return False
 
     def get_patch(self, base_commit: str):
         try:

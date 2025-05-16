@@ -158,12 +158,9 @@ class ResourcePoolManager:
 
 
 def apply_kl_penalty(data: DataProto, kl_ctrl: core_algos.AdaptiveKLController, kl_penalty="kl"):
-    responses = data.batch["responses"]
-    response_length = responses.size(1)
     token_level_scores = data.batch["token_level_scores"]
     batch_size = data.batch.batch_size[0]
-    attention_mask = data.batch["attention_mask"]
-    response_mask = attention_mask[:, -response_length:]
+    response_mask = compute_response_mask(data)
 
     # compute kl between ref_policy and current policy
     # When apply_kl_penalty, algorithm.use_kl_in_reward=True, so the reference model has been enabled.

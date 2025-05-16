@@ -6,18 +6,19 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import numpy as np
+import ray
 import torch
 from omegaconf import DictConfig
 from openai.types.chat.chat_completion import ChatCompletion
+from reward import swebench_eval, swesmith_eval
 from swebench.harness.constants import KEY_INSTANCE_ID, KEY_MODEL, KEY_PREDICTION
 from tensordict import TensorDict
 from terminal import Terminal
+from tqdm import tqdm
 from transformers import PreTrainedTokenizer
 
 from verl.protocol import DataProto
 from verl.workers.rollout.async_server import ChatCompletionScheduler
-
-MAX_TURNS = 50
 
 resource.setrlimit(resource.RLIMIT_NOFILE, (4096, 4096))
 
@@ -85,6 +86,8 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
         max_cache_size: int = 10000,
     ):
         super().__init__(config, model_path, server_addresses, max_cache_size)
+        self.train_step = 1
+        self.eval_step = 1
 
     async def generate_sequences(self, batch: DataProto, **sampling_params) -> DataProto:
         kwargs = dict(
@@ -123,20 +126,38 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
         kwargs.update(sampling_params)
         print(f"[{self.__class__.__name__}] generate_sequences sampling params: {kwargs}")
 
+        bar = tqdm(total=len(trajectories), desc="Rollout Progress")
+
         async def callback(completions: ChatCompletion, info: dict[str, Any], exception: Exception | None):
             traj = info["traj"]
             messages, terminal, extra_info = traj["messages"], traj["terminal"], traj["extra_info"]
 
             def cleanup():
-                traj["patch"] = {
+                patch = {
                     KEY_INSTANCE_ID: extra_info["instance_id"],
                     KEY_MODEL: self.model_name,
                     KEY_PREDICTION: terminal.get_patch(extra_info["base_commit"]) if terminal is not None else "",
                 }
+
                 if terminal is not None:
                     terminal.stop()
+                    source = traj["extra_info"]["source"]
+                    data_row = traj["extra_info"]["data_row"]
+                    if traj["finish_reason"] == "length":
+                        # penalize truncated trajectories to reduce length reward hacking
+                        traj["score"] = 0
+                    elif source == "swesmith":
+                        traj["score"] = ray.get(swesmith_eval.remote(patch, data_row, self.train_step))
+                    elif source == "swebench":
+                        traj["score"] = ray.get(swebench_eval.remote(patch, data_row, self.eval_step))
+                    else:
+                        raise ValueError(f"unknown data source: {source}")
+                else:
+                    traj["score"] = 0
+                bar.update(1)
 
             if exception is not None:
+                traj["finish_reason"] = "exception"
                 messages.pop()
                 await run_in_async(cleanup)
                 return
@@ -145,18 +166,21 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             messages.append({"role": response.message.role, "content": response.message.content})
 
             if response.finish_reason == "length":
+                traj["finish_reason"] = "length"
                 await run_in_async(cleanup)
                 return
 
             action = extract_action(response.message.content)
             if action is None:
+                traj["finish_reason"] = "stop"
                 await run_in_async(cleanup)
                 return
 
             messages[-1]["content"] += "</terminal>"
 
             traj["turn"] += 1
-            if traj["turn"] > MAX_TURNS:
+            if traj["turn"] > self.config.max_turns:
+                traj["finish_reason"] = "max_turns"
                 await run_in_async(cleanup)
                 return
 
@@ -173,6 +197,15 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
                     "content": f"<terminal_output>{output}</terminal_output>",
                 }
             )
+
+            if await run_in_async(
+                lambda: len(self.tokenizer.apply_chat_template(messages, add_generation_prompt=True))
+                > self.config.max_model_len - self.config.response_length
+            ):
+                traj["finish_reason"] = "overflow"
+                messages.pop()
+                await run_in_async(cleanup)
+                return
 
             await self.submit_chat_completions(
                 callback=callback,
@@ -199,17 +232,20 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
         print(f"[{self.__class__.__name__}] generate_sequences done")
 
         messages = [traj["messages"] for traj in trajectories]
-        patches = [traj["patch"] for traj in trajectories]
-        instances = [traj["extra_info"]["data_row"] for traj in trajectories]
+        scores = [traj["score"] for traj in trajectories]
 
-        return self._postprocess(batch=batch, batch_messages=messages, patches=patches, instances=instances, n=old_n)
+        if is_validate:
+            self.eval_step += 1
+        else:
+            self.train_step += 1
+
+        return self._postprocess(batch=batch, batch_messages=messages, scores=scores, n=old_n)
 
     def _postprocess(
         self,
         batch: DataProto,
         batch_messages: list[list[dict[str, str]]],
-        patches: list[dict],
-        instances: list[dict],
+        scores: list[float],
         n: int,
     ) -> DataProto:
         # prompts: left pad
@@ -254,7 +290,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
             batch_size=len(input_ids),
         )
 
-        return DataProto(batch=batch, non_tensor_batch={"patches": np.array(patches), "instances": np.array(instances)})
+        return DataProto(batch=batch, non_tensor_batch={"scores": np.array(scores)})
 
 
 class NaiveChatCompletionScheduler(ChatCompletionScheduler):
