@@ -20,9 +20,7 @@ client = docker.from_env(max_pool_size=1024)
 SYSTEM_PROMPT = """
 You are an AI software engineering assistant. Your task is to resolve the given Github issue and you will be given access to the repository through the command line. The repository is already cloned at the current working directory and available through your terminal, there is no need to clone it manually. You will need to modify the repo and make and commit your changes to git to fix the issue.
 
-You put your internal thoughts in between <think></think>, your terminal input in between <terminal></terminal>, and your final answer in between <answer></answer>.  Format your response by alternating between thinking and terminal action, with the last message ending in an answer section after thinking.
-
-The terminal input is a generic stdin input, so to run a command, you need to emit a newline character at the end. Additionally, you are able to type arbitrary control sequences, such as ^C, ^D, ^[[A, etc. Example: <terminal>ls -la\n</terminal> or <terminal>^C</terminal>
+The terminal input is a generic stdin input, so to run a command, you need to emit a newline character at the end. Additionally, you are able to type arbitrary control sequences, such as ^C, ^D, ^[[A, etc. Example: <terminal>ls -la\n</terminal> or <terminal>^C</terminal>.
 """.strip()
 
 

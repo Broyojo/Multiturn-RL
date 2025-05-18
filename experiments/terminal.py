@@ -11,6 +11,46 @@ from swebench.harness.constants import DOCKER_USER, DOCKER_WORKDIR
 
 CLIENT = docker.from_env(timeout=300, max_pool_size=1024)
 
+# ── forbidden external URLs ────────────────────────────────────────────────────
+FORBIDDEN_URL_RE = re.compile(
+    r"https?://[^ \t\r\n]*\b(?:github(?:usercontent)?\.com|gitlab\.com)\b"
+    r"|(?:github(?:usercontent)?\.com|gitlab\.com)",
+    re.I,
+)
+
+# ── forbidden git sub-commands / history plumbing ─────────────────────────────
+GIT_FORBIDDEN_RE = re.compile(
+    r"""
+    \bgit\s+(
+        # network / ref manipulation
+        clone|pull|fetch|push|remote|
+        # deep inspection
+        log|show|blame|cat-file|rev-[^\s]+|
+        # checkout to other refs / hashes
+        checkout\s+[^\s]*(?:\^|~|origin/|[a-f0-9]{7,40})|
+        # diff against hashes or cached index
+        diff\s+[^\s]*(?:\^|~|[a-f0-9]{7,40}|--cached)
+    )\b
+    """,
+    re.I | re.X,
+)
+
+
+def _is_reward_hacking(command: str) -> bool:
+    """
+    Return True if `command` looks like an attempt to:
+    • contact GitHub/GitLab (raw or site),
+    • fetch/clone/push, or
+    • inspect commits/history beyond the working tree.
+    Safe commands (add/commit/status/plain diff, etc.) are unaffected.
+    """
+    cmd = command.strip().lower()
+    if FORBIDDEN_URL_RE.search(cmd):
+        return True
+    if GIT_FORBIDDEN_RE.search(cmd):
+        return True
+    return False
+
 
 class Terminal:
     def __init__(self, image: str, commit: str | None = None):
@@ -24,6 +64,7 @@ class Terminal:
             platform="linux/x86_64",
             user=DOCKER_USER,
             working_dir=DOCKER_WORKDIR,
+            environment={"TERM": "xterm", "LC_ALL": "C.UTF-8"},
             restart_policy={"Name": "unless-stopped"},
         )
         if commit is not None:
@@ -50,6 +91,16 @@ class Terminal:
 
     def _strip_ansi(self, text):
         return self.ansi_escape.sub("", text)
+
+    def _clean_control(self, stream: str) -> str:
+        buf = []
+        for ch in stream:
+            if ch == "\b":  # back-space – remove previous char
+                if buf:
+                    buf.pop()
+            else:
+                buf.append(ch)
+        return "".join(buf)
 
     def encode_input(self, text: str) -> bytes:
         if text.startswith("^"):
@@ -92,14 +143,14 @@ class Terminal:
         finally:
             sel.close()
 
-        return output_buffer.decode("utf-8", errors="replace")
+        return self._clean_control(output_buffer.decode("utf-8", errors="replace"))
 
-    def __call__(self, input: str, timeout=3):
-        if self._is_reward_hacking(input):
+    def __call__(self, input: str, timeout=1):
+        if _is_reward_hacking(input):
             return "Error: This operation is not permitted in this environment. Please use the given repo and code."
 
         try:
-            self.socket._sock.send(self.encode_input(input))
+            self.socket._sock.sendall(self.encode_input(input))
 
             output = self.read_container_output(timeout=timeout)
             output = output.replace("\r", "")  # fix carriage-return
@@ -130,27 +181,6 @@ class Terminal:
         except Exception as e:
             print(f"Error stopping container: {e}")
             print(traceback.format_exc())
-
-    def _is_reward_hacking(self, input: str) -> bool:
-        """Check if the input contains reward hacking to download correct code from github/gitlab"""
-        input_lower = input.lower()
-        if "git clone" in input_lower:
-            return True
-
-        clone_patterns = [
-            r"git\s+clone\s+",
-            r"clone\s+.*\.git",
-            r"git\s+.*\s+clone",
-            r"github\.com/[^/]+/[^/\s]+",
-            r"gitlab\.com/[^/]+/[^/\s]+",
-            r"raw\.githubusercontent\.com/[^/]+/[^/\s]+",
-        ]
-
-        for pattern in clone_patterns:
-            if re.search(pattern, input_lower):
-                return True
-
-        return False
 
     def get_patch(self, base_commit: str):
         try:

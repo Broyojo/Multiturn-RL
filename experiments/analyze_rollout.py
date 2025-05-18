@@ -3,7 +3,7 @@ import os
 
 import matplotlib.pyplot as plt
 
-DIR = "./rollouts/validation/run10"
+DIR = "runs/multiturn-rl/Qwen__Qwen2.5-7B-Instruct-swe-terminal-2k_response-interrupt_fix/rollouts/validation"
 
 mean_scores = []
 

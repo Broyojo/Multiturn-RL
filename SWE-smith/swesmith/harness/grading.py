@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from swebench.harness.constants import (
     APPLY_PATCH_FAIL,
     FAIL_TO_FAIL,
@@ -12,6 +13,7 @@ from swebench.harness.constants import (
     TestStatus,
 )
 from swebench.harness.grading import get_resolution_status
+
 from swesmith.constants import (
     KEY_IMAGE_NAME,
     KEY_MIN_TESTING,
@@ -29,6 +31,8 @@ def read_test_output(filename: str):
     if APPLY_PATCH_FAIL in content:
         return None, False
     if TESTS_TIMEOUT in content:
+        return None, False
+    if "Interrupted: " in content:
         return None, False
     if TEST_OUTPUT_START not in content or TEST_OUTPUT_END not in content:
         return content, False

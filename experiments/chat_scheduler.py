@@ -143,10 +143,7 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
                     terminal.stop()
                     source = traj["extra_info"]["source"]
                     data_row = traj["extra_info"]["data_row"]
-                    if traj["finish_reason"] == "length":
-                        # penalize truncated trajectories to reduce length reward hacking
-                        traj["score"] = 0
-                    elif source == "swesmith":
+                    if source == "swesmith":
                         traj["score"] = ray.get(swesmith_eval.remote(patch, data_row, self.train_step))
                     elif source == "swebench":
                         traj["score"] = ray.get(swebench_eval.remote(patch, data_row, self.eval_step))
