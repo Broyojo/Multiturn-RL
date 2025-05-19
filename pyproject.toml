@@ -15,6 +15,7 @@ dependencies = [
     "httpx-aiohttp>=0.1.2",
     "blessed>=1.21.0",
     "pyte>=0.8.2",
+    "anthropic>=0.51.0",
 ]
 name = "multiturn-rl"
 version = "0.1.0"

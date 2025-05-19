@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export MODEL="Qwen/Qwen2.5-7B-Instruct"
+export MODEL="Qwen/Qwen3-8B"
 export PROJECT="multiturn-rl"
-export EXPERIMENT="${MODEL//\//__}-swe-terminal-2k_response-reward_hack_fixes"
+export EXPERIMENT="${MODEL//\//__}-swe-terminal-8k_response-reward_hack_fixes"
 export RUN_DIR="./runs/$PROJECT/$EXPERIMENT"
 
 export VLLM_USE_V1=1
@@ -22,8 +22,8 @@ run_training_job() {
         data.seed=42 \
         data.return_raw_chat=True \
         data.train_batch_size=16 \
-        data.max_prompt_length=14336 \
-        data.max_response_length=2048 \
+        data.max_prompt_length=8192 \
+        data.max_response_length=8192 \
         data.filter_overlong_prompts=True \
         data.filter_overlong_prompts_workers=8 \
         data.truncation='error' \
