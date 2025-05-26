@@ -15,6 +15,8 @@ from swesmith.build_repo.download_images import (
     get_dockerhub_token,
 )
 
+os.environ["EXPERIMENT"] = "prepare"
+
 client = docker.from_env(max_pool_size=1024)
 
 SYSTEM_PROMPT = """
@@ -143,7 +145,7 @@ def main():
     OUT = "./data/swebench/"
     os.makedirs(OUT, exist_ok=True)
 
-    scratch = False
+    scratch = True
     if scratch:
         train_dataset = load_dataset("SWE-bench/SWE-smith", split="train")
         train_dataset = train_dataset.filter(lambda e: len(e["problem_statement"]) > 0, num_proc=16)
@@ -156,6 +158,7 @@ def main():
         train_dataset.to_parquet(os.path.join(OUT, "train.parquet"))
         test_dataset.to_parquet(os.path.join(OUT, "test.parquet"))
     else:
+        # run when you already filtered and don't want to filter again
         train_dataset = load_dataset("parquet", data_files=os.path.join(OUT, "train.parquet"), split="train")
         test_dataset = load_dataset("parquet", data_files=os.path.join(OUT, "test.parquet"), split="train")
 

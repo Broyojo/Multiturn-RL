@@ -1,5 +1,6 @@
 import re
 import selectors
+import socket
 import subprocess
 import time
 import traceback
@@ -7,9 +8,19 @@ from subprocess import Popen
 from uuid import uuid4
 
 import docker
+import ray
 from swebench.harness.constants import DOCKER_USER, DOCKER_WORKDIR
 
-CLIENT = docker.from_env(timeout=300, max_pool_size=1024)
+"""
+interfaces:
+1. get result from model, build a client (talk to server using http)
+    - send request to start container
+    - spin up background process, get the result
+2. 
+
+
+"""
+
 
 # ── forbidden external URLs ────────────────────────────────────────────────────
 FORBIDDEN_URL_RE = re.compile(
@@ -52,9 +63,11 @@ def _is_reward_hacking(command: str) -> bool:
     return False
 
 
+@ray.remote(num_cpus=0.001)
 class Terminal:
     def __init__(self, image: str, commit: str | None = None):
-        self.container = CLIENT.containers.run(
+        self.client = docker.from_env(timeout=300, max_pool_size=1)
+        self.container = self.client.containers.run(
             image,
             name=f"terminal-{uuid4()}",
             command="/bin/bash",
@@ -163,6 +176,17 @@ class Terminal:
             print(self.container.name)
             return ""
 
+    def check_buffer_sizes(self):
+        try:
+            sock = self.socket._sock
+            recv_buf = sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
+            send_buf = sock.getsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF)
+            print(f"Receive buffer: {recv_buf} bytes ({recv_buf / 1024:.1f} KB)")
+            print(f"Send buffer: {send_buf} bytes ({send_buf / 1024:.1f} KB)")
+            return recv_buf, send_buf
+        except Exception as e:
+            print(f"Error checking buffer sizes: {e}")
+
     def stop(self):
         try:
             if hasattr(self, "socket") and self.socket:
@@ -177,7 +201,6 @@ class Terminal:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-        #     cleanup_container(CLIENT, self.container)
         except Exception as e:
             print(f"Error stopping container: {e}")
             print(traceback.format_exc())
@@ -197,18 +220,25 @@ class Terminal:
             print(self.container.name)
             return ""
 
+    def __del__(self):
+        try:
+            self.stop()
+        except Exception:
+            pass
+
 
 if __name__ == "__main__":
-    terminal = Terminal(
+    terminal = Terminal.remote(
         image="swesmith.x86_64.john-kurkowski__tldextract.3d1bf184",
         commit="a2e2dab2e2f3ab56ed60f6af0abe78dafbc81cb3",
     )
+    # print(ray.get(terminal.check_buffer_sizes.remote()))
     try:
         while True:
             user_input = input("input: ")
             if user_input.startswith("get_patch("):
-                print(terminal.get_patch(user_input.split("(")[1][:-1]))
+                print(ray.get(terminal.get_patch.remote(user_input.split("(")[1][:-1])))
             else:
-                print(terminal(user_input + "\n"))
+                print(ray.get(terminal.__call__.remote(user_input + "\n")))
     finally:
         terminal.stop()

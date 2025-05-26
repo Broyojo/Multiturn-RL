@@ -136,11 +136,13 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
                 patch = {
                     KEY_INSTANCE_ID: extra_info["instance_id"],
                     KEY_MODEL: self.model_name,
-                    KEY_PREDICTION: terminal.get_patch(extra_info["base_commit"]) if terminal is not None else "",
+                    KEY_PREDICTION: ray.get(terminal.get_patch.remote(extra_info["base_commit"]))
+                    if terminal is not None
+                    else "",
                 }
 
                 if terminal is not None:
-                    terminal.stop()
+                    ray.get(terminal.stop.remote())
                     source = traj["extra_info"]["source"]
                     data_row = traj["extra_info"]["data_row"]
                     if source == "swesmith":
@@ -182,12 +184,10 @@ class TerminalChatCompletionScheduler(ChatCompletionScheduler):
                 return
 
             if terminal is None:
-                traj["terminal"] = await run_in_async(
-                    lambda: Terminal(image=extra_info["docker_image"], commit=extra_info["base_commit"])
-                )
+                traj["terminal"] = Terminal.remote(image=extra_info["docker_image"], commit=extra_info["base_commit"])
                 terminal = traj["terminal"]
 
-            output = await run_in_async(lambda: terminal(action, timeout=1))
+            output = await run_in_async(lambda: ray.get(terminal.__call__.remote(action, timeout=1)))
             messages.append(
                 {
                     "role": "user",
