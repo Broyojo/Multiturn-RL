@@ -3,36 +3,18 @@ Multiturn RL experiments
 
 ## Setup
 ```bash
-$ uv sync
+# install uv if necessary
+$ curl -LsSf https://astral.sh/uv/install.sh | sh
+# install dependencies
+$ uv venv
+$ uv pip install "torch==2.6.0"
+$ uv sync --no-build-isolation
+$ uv pip install "vllm==0.8.5"
 ```
 
 ## Run
 ```bash
 $ cd experiments
+$ python prepare_swebench_data.py
 $ ./train.sh
 ```
-
-## TODO
-- [X] Make custom chat scheduler for terminal environment
-- [ ] Create custom reward functions for various tasks (SWE-Bench, TACO, math, etc.)
-- [ ] Collect data
-  - [ ] ToRL dataset?
-- [ ] Run experiments
-
-
-
-## Data
-*1. Math
-   - NuminaMath
-   - AIME
-   - MATH
-   - etc.
-2. Coding
-   - TACO
-*3. **SWE**
-   - **SWE-Bench**
-
-
-
-Notes:
-- should we do regular RL training before integrating with terminal? seems like it will take a while before the model starts using the terminal

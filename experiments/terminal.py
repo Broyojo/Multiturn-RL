@@ -11,24 +11,18 @@ from swebench.harness.constants import DOCKER_USER, DOCKER_WORKDIR
 
 CLIENT = docker.from_env(timeout=300, max_pool_size=1024)
 
-# ── forbidden external URLs ────────────────────────────────────────────────────
 FORBIDDEN_URL_RE = re.compile(
     r"https?://[^ \t\r\n]*\b(?:github(?:usercontent)?\.com|gitlab\.com)\b"
     r"|(?:github(?:usercontent)?\.com|gitlab\.com)",
     re.I,
 )
 
-# ── forbidden git sub-commands / history plumbing ─────────────────────────────
 GIT_FORBIDDEN_RE = re.compile(
     r"""
     \bgit\s+(
-        # network / ref manipulation
         clone|pull|fetch|push|remote|
-        # deep inspection
         log|show|blame|cat-file|rev-[^\s]+|
-        # checkout to other refs / hashes
         checkout\s+[^\s]*(?:\^|~|origin/|[a-f0-9]{7,40})|
-        # diff against hashes or cached index
         diff\s+[^\s]*(?:\^|~|[a-f0-9]{7,40}|--cached)
     )\b
     """,
@@ -37,19 +31,8 @@ GIT_FORBIDDEN_RE = re.compile(
 
 
 def _is_reward_hacking(command: str) -> bool:
-    """
-    Return True if `command` looks like an attempt to:
-    • contact GitHub/GitLab (raw or site),
-    • fetch/clone/push, or
-    • inspect commits/history beyond the working tree.
-    Safe commands (add/commit/status/plain diff, etc.) are unaffected.
-    """
     cmd = command.strip().lower()
-    if FORBIDDEN_URL_RE.search(cmd):
-        return True
-    if GIT_FORBIDDEN_RE.search(cmd):
-        return True
-    return False
+    return FORBIDDEN_URL_RE.search(cmd) or GIT_FORBIDDEN_RE.search(cmd)
 
 
 class Terminal:
@@ -95,7 +78,7 @@ class Terminal:
     def _clean_control(self, stream: str) -> str:
         buf = []
         for ch in stream:
-            if ch == "\b":  # back-space – remove previous char
+            if ch == "\b":
                 if buf:
                     buf.pop()
             else:
@@ -177,7 +160,6 @@ class Terminal:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-        #     cleanup_container(CLIENT, self.container)
         except Exception as e:
             print(f"Error stopping container: {e}")
             print(traceback.format_exc())
@@ -196,6 +178,19 @@ class Terminal:
             print(traceback.format_exc())
             print(self.container.name)
             return ""
+
+
+class RemoteTerminal:
+    def __init__(self, image, commit):
+        self.image = image
+        self.commit = commit
+        # start container here
+
+    async def run(self, input):
+        pass
+
+    async def stop(self):
+        pass
 
 
 if __name__ == "__main__":
