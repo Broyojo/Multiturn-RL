@@ -2,6 +2,7 @@ import json
 import os
 import re
 import traceback
+from pathlib import Path, PurePosixPath
 from typing import cast
 from uuid import uuid4
 
@@ -10,8 +11,20 @@ import ray
 import swebench
 import swebench.harness
 import swesmith.harness.eval
-from swebench.harness.constants import KEY_INSTANCE_ID, SWEbenchInstance
+from swebench.harness.constants import (
+    KEY_INSTANCE_ID,
+    KEY_MODEL,
+    LOG_INSTANCE,
+    LOG_REPORT,
+    LOG_TEST_OUTPUT,
+    RUN_EVALUATION_LOG_DIR,
+    SWEbenchInstance,
+)
+from swebench.harness.docker_build import setup_logger
+from swebench.harness.grading import get_eval_report
 from swebench.harness.test_spec.test_spec import make_test_spec
+from swesmith.constants import KEY_PATCH
+from terminal import RemoteTerminal
 
 
 def format_reward(messages: list[dict[str, str]]):
@@ -102,6 +115,56 @@ def swebench_eval(patch, data_row, step):
     except Exception:
         print(traceback.format_exc())
         return 0.0
+
+
+async def swebench_remote_eval(patch: dict, terminal: RemoteTerminal, data_row: dict, step: int):
+    assert patch[KEY_INSTANCE_ID] == data_row[KEY_INSTANCE_ID]
+
+    run_id = f"eval-step{step}-{patch[KEY_INSTANCE_ID]}-{os.environ['EXPERIMENT'].replace('/', '__')}-{uuid4()}"
+    instance_id = patch[KEY_INSTANCE_ID]
+
+    test_spec = make_test_spec(cast(SWEbenchInstance, data_row), namespace=None, instance_image_tag="latest")
+
+    instance_id = test_spec.instance_id
+    model_name_or_path = patch.get(KEY_MODEL, "None").replace("/", "__")
+    log_dir = RUN_EVALUATION_LOG_DIR / run_id / model_name_or_path / instance_id
+
+    report_path = log_dir / LOG_REPORT
+    if report_path.exists():
+        return instance_id, json.loads(report_path.read_text())
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / LOG_INSTANCE
+    logger = setup_logger(instance_id, log_file)
+
+    base_commit = data_row["base_commit"]
+    git_diff = (await terminal.exec_run(command=f"bash -c 'git diff {base_commit}'")).output.decode(
+        "utf-8", errors="replace"
+    )
+    patch[KEY_PATCH] = git_diff
+
+    eval_file = Path(log_dir / "eval.sh")
+    eval_file.write_text(test_spec.eval_script)
+    await terminal.copy_to_container(eval_file, PurePosixPath("/eval.sh"))
+    test_output = (await terminal.exec_run("/bin/bash /eval.sh", timeout=100)).output
+    test_output_path = log_dir / LOG_TEST_OUTPUT
+
+    with open(test_output_path, "w") as f:
+        f.write(test_output)
+        # if timed_out:
+        #     f.write(f"\n\nTimeout error: {timeout} seconds exceeded.")
+        #     raise EvaluationError(
+        #         instance_id,
+        #         f"Test timed out after {timeout} seconds.",
+        #         logger,
+        #     )
+
+    report = get_eval_report(
+        test_spec=test_spec,
+        prediction=patch,
+        test_log_path=test_output_path,
+        include_tests_status=True,
+    )
 
 
 def compute_score(
