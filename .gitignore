@@ -176,3 +176,4 @@ cython_debug/
 ot
 test.json
 test2.json
+data
