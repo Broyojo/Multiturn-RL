@@ -1,7 +1,7 @@
 import ray
 
-from multiturn_rl.env.math_env import MathEnv
-from multiturn_rl.env.registry import EnvRegistry
+from multiturn_rl.environment.math_env import MathEnv
+from multiturn_rl.environment.registry import EnvRegistry
 
 MathEnv
 

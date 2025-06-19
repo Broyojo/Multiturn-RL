@@ -7,7 +7,7 @@ import torch
 from omegaconf import DictConfig
 from tensordict import TensorDict
 
-from multiturn_rl.env.registry import EnvRegistry
+from multiturn_rl.environment.registry import EnvRegistry
 from verl.protocol import DataProto
 from verl.workers.rollout.chat_scheduler import ChatCompletionScheduler
 
