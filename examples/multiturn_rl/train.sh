@@ -1,0 +1,63 @@
+set -x
+
+export VLLM_USE_V1=1
+
+export MODEL=Qwen/Qwen3-0.6B
+export PROJECT="multiturn-rl"
+export EXPERIMENT=Qwen30.6B-gsm8k-test
+
+export RUN_DIR="./runs/$PROJECT/$EXPERIMENT"
+
+python3 -m verl.trainer.main_ppo \
+    algorithm.adv_estimator=grpo \
+    data.train_files=./data/gsm8k/train.parquet \
+    data.val_files=./data/gsm8k/test.parquet \
+    data.return_raw_chat=$return_raw_chat \
+    data.train_batch_size=4 \
+    data.max_prompt_length=512 \
+    data.max_response_length=1024 \
+    data.filter_overlong_prompts=True \
+    data.filter_overlong_prompts_workers=8 \
+    data.truncation='error' \
+    actor_rollout_ref.model.path=$MODEL \
+    actor_rollout_ref.actor.optim.lr=1e-6 \
+    actor_rollout_ref.model.use_remove_padding=True \
+    actor_rollout_ref.actor.ppo_mini_batch_size=2 \
+    actor_rollout_ref.actor.use_dynamic_bsz=True \
+    actor_rollout_ref.actor.ppo_max_token_len_per_gpu=1536 \
+    actor_rollout_ref.actor.ulysses_sequence_parallel_size=1 \
+    actor_rollout_ref.actor.use_kl_loss=True \
+    actor_rollout_ref.actor.kl_loss_coef=0.001 \
+    actor_rollout_ref.actor.kl_loss_type=low_var_kl \
+    actor_rollout_ref.actor.entropy_coeff=0 \
+    actor_rollout_ref.actor.clip_ratio_low=0.2 \
+    actor_rollout_ref.actor.clip_ratio_high=0.28 \
+    actor_rollout_ref.model.enable_gradient_checkpointing=True \
+    actor_rollout_ref.model.use_liger=True \
+    actor_rollout_ref.actor.fsdp_config.param_offload=False \
+    actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
+    actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
+    actor_rollout_ref.rollout.name=vllm \
+    actor_rollout_ref.rollout.mode=async \
+    actor_rollout_ref.rollout.multi_turn.enable=True \
+    actor_rollout_ref.rollout.multi_turn.format=hermes \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
+    actor_rollout_ref.rollout.n=2 \
+    actor_rollout_ref.rollout.enforce_eager=False \
+    actor_rollout_ref.rollout.free_cache_engine=False \
+    actor_rollout_ref.ref.fsdp_config.param_offload=True \
+    reward_model.launch_reward_fn_async=True \
+    algorithm.use_kl_in_reward=False \
+    trainer.critic_warmup=0 \
+    trainer.default_local_dir=$RUN_DIR/checkpoints \
+    trainer.rollout_data_dir=$RUN_DIR/rollouts/train \
+    trainer.validation_data_dir=$RUN_DIR/rollouts/validation \
+    trainer.logger=['console'] \
+    trainer.project_name=$PROJECT \
+    trainer.experiment_name=$EXPERIMENT \
+    trainer.val_before_train=True \
+    trainer.n_gpus_per_node=1 \
+    trainer.nnodes=1 \
+    trainer.save_freq=10 \
+    trainer.test_freq=10 \
+    trainer.total_epochs=1 $@
