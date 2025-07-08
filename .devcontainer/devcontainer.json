@@ -1,0 +1,33 @@
+{
+    "name": "Multiturn RL Devcontainer",
+    "image": "verlai/verl:base-verl0.4-cu124-cudnn9.8-torch2.6-fa2.7.4",
+    "workspaceFolder": "/Multiturn-RL",
+    "mounts": [
+        "source=${localWorkspaceFolder},target=/Multiturn-RL,type=bind"
+    ],
+    "runArgs": [
+        "--gpus",
+        "all",
+        "--net",
+        "host",
+        "--shm-size",
+        "10g",
+        "--cap-add",
+        "SYS_ADMIN",
+        "-v",
+        "/var/run/docker.sock:/var/run/docker.sock" // mount host docker socket for DiD
+    ],
+    "customizations": {
+        "extensions": [
+            "ms-python.vscode-pylance",
+            "ms-python.python",
+            "ms-python.debugpy",
+            "charliermarsh.ruff"
+        ],
+        "settings": {
+            "terminal.integrated.shell.linux": "/bin/bash"
+        }
+    },
+    "remoteUser": "root",
+    "shutdownAction": "stopContainer"
+}

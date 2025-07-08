@@ -1,0 +1,3 @@
+FROM verlai/verl:base-verl0.4-cu124-cudnn9.8-torch2.6-fa2.7.4
+
+RUN apt-get update -y && apt-get install docker.io -y

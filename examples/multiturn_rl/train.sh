@@ -1,10 +1,12 @@
 set -x
 
+# uv pip install "torch==2.6.0" && uv pip install "flash-attn==2.7.3" --no-build-isolation && uv pip install -e ".[vllm,gpu]" && uv pip install flashinfer-python -i https://flashinfer.ai/whl/cu124/torch2.6/
+
 export VLLM_USE_V1=1
 
 export MODEL=Qwen/Qwen3-0.6B
 export PROJECT="multiturn-rl"
-export EXPERIMENT=Qwen30.6B-gsm8k-test
+export EXPERIMENT=Qwen3-0.6B-gsm8k-test-2
 
 export RUN_DIR="./runs/$PROJECT/$EXPERIMENT"
 
@@ -12,7 +14,7 @@ python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=./data/gsm8k/train.parquet \
     data.val_files=./data/gsm8k/test.parquet \
-    data.return_raw_chat=$return_raw_chat \
+    data.return_raw_chat=True \
     data.train_batch_size=4 \
     data.max_prompt_length=512 \
     data.max_response_length=1024 \
@@ -43,10 +45,11 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.multi_turn.format=hermes \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
     actor_rollout_ref.rollout.n=2 \
-    actor_rollout_ref.rollout.enforce_eager=False \
+    actor_rollout_ref.rollout.enforce_eager=True \
     actor_rollout_ref.rollout.free_cache_engine=False \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     reward_model.launch_reward_fn_async=True \
+    reward_model.reward_manager=multiturn \
     algorithm.use_kl_in_reward=False \
     trainer.critic_warmup=0 \
     trainer.default_local_dir=$RUN_DIR/checkpoints \
