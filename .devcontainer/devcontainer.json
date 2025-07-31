@@ -6,8 +6,7 @@
     "mounts": [
         "source=${localWorkspaceFolder},target=/workspace/verl,type=bind",
         "source=${env:HOME}/.cache/huggingface,target=/root/.cache/huggingface,type=bind",
-        "source=${env:HOME}/.ssh,target=/root/.ssh,type=bind,readonly",
-        "source=${env:HOME}/.gitconfig,target=/root/.gitconfig,type=bind"
+        "source=${env:SSH_AUTH_SOCK},target=/ssh-agent,type=bind,consistency=cached"
     ],
     "runArgs": [
         "--gpus",
