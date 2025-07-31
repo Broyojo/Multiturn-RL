@@ -1,0 +1,2 @@
+# start docker daemon with TCP port open
+sudo dockerd -H unix:///var/run/docker.sock -H tcp://0.0.0.0:2375

@@ -1,0 +1,56 @@
+services:
+  fetcher-mcp:
+    image: timemagic/rl-mcp:fetcher-mcp
+    container_name: fetcher-mcp
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    # Using host network mode on Linux hosts can improve browser access efficiency
+    # network_mode: "host"
+    volumes:
+      # For Playwright, may need to share certain system paths
+      - /tmp:/tmp
+    networks:
+      - default
+  google-search:
+    image: timemagic/rl-mcp:google-search
+    container_name: google-search
+    restart: unless-stopped
+    networks:
+      - default
+  sandbox-fusion:
+    image: timemagic/rl-mcp:sandbox-fusion
+    container_name: sandbox-fusion
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      - default
+  proxy-mcp:
+    image: timemagic/rl-mcp:proxy-mcp
+    container_name: proxy-mcp
+    restart: unless-stopped
+    depends_on:
+      - google-search
+      - sandbox-fusion
+      - fetcher-mcp
+    environment:
+     - MCP_LIST=google-search,fetcher-mcp
+    networks:
+      - default
+  # general-sandbox:
+  #   image: timemagic/rl-mcp:general
+  #   entrypoint: /mcp/daemon-mcp.py
+  #   container_name: general
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - proxy-mcp
+  #   ports:
+  #     - "3000:3000"
+  #   networks:
+  #     - default
+
+networks:
+  default:
+    name: mcp-network
+    driver: bridge

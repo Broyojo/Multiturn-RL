@@ -36,6 +36,7 @@
     },
     "remoteUser": "root",
     "shutdownAction": "stopContainer",
-    "postCreateCommand": "pip install -e . --no-deps",
+    // TODO: bake the docker install into the image
+    "postCreateCommand": "pip install -e . --no-deps && apt-get update && apt-get install -y docker.io && pip install docker \"mcp[cli]\"",
     "remoteEnv": {}
 }
