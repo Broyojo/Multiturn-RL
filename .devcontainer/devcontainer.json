@@ -1,0 +1,40 @@
+{
+    // following instructions from https://verl.readthedocs.io/en/latest/start/install.html
+    "name": "Multiturn RL Devcontainer",
+    "image": "verlai/verl:app-verl0.5-vllm0.9.1-mcore0.12.2-te2.2",
+    "workspaceFolder": "/workspace/verl",
+    "mounts": [
+        "source=${localWorkspaceFolder},target=/workspace/verl,type=bind",
+        "source=${localEnv:HOME}/.cache/huggingface,target=/root/.cache/huggingface,type=bind",
+        "source=${localEnv:HOME}/.ssh,target=/root/.ssh,type=bind"
+    ],
+    "runArgs": [
+        "--gpus",
+        "all",
+        "--net",
+        "host",
+        "--shm-size",
+        "10g",
+        "--cap-add",
+        "SYS_ADMIN",
+        "-v",
+        "/var/run/docker.sock:/var/run/docker.sock" // mount host docker socket for DiD
+    ],
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.vscode-pylance",
+                "ms-python.python",
+                "ms-python.debugpy",
+                "charliermarsh.ruff"
+            ],
+            "settings": {
+                "terminal.integrated.shell.linux": "/bin/bash"
+            }
+        }
+    },
+    "remoteUser": "root",
+    "shutdownAction": "stopContainer",
+    "postCreateCommand": "pip install -e . --no-deps",
+    "remoteEnv": {}
+}
