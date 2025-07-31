@@ -6,7 +6,7 @@
     "mounts": [
         "source=${localWorkspaceFolder},target=/workspace/verl,type=bind",
         "source=${env:HOME}/.cache/huggingface,target=/root/.cache/huggingface,type=bind",
-        "source=${env:HOME}/.ssh,target=/root/.ssh,type=bind",
+        "source=${env:HOME}/.ssh,target=/root/.ssh,type=bind,readonly",
         "source=${env:HOME}/.gitconfig,target=/root/.gitconfig,type=bind"
     ],
     "runArgs": [
