@@ -1,0 +1,2 @@
+- name: multiturn_agent_loop
+  _target_: recipe.multiturn.multiturn_agent_loop.MultiturnAgentLoop

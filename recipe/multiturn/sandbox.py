@@ -28,6 +28,7 @@ class Sandbox:
         self.network = network
         self.ports = ports
         self.mcp_port = mcp_port
+
         self.container_id = None
         self.container_node_ip = None
         self.client = None
@@ -85,6 +86,7 @@ class Sandbox:
             except Exception as e:
                 print(f"Error closing MCP client: {e}")
 
+        # TODO: make closing the container more robust, sometimes it hangs. maybe use a process to kill it?
         if self.container:
             try:
                 await run_async(lambda: self.container.stop())
@@ -126,7 +128,7 @@ def launch_container(
 
 
 async def main():
-    NUM_SANDBOXES = 2
+    NUM_SANDBOXES = 1
     bar = tqdm(total=NUM_SANDBOXES, desc="Launching Sandboxes")
 
     async def start_sandbox():
@@ -144,7 +146,26 @@ async def main():
             )
             bar.write(f"Container status: {sandbox.container.status}")
             print(await sandbox.session.list_tools())
+            print(
+                await sandbox.session.call_tool(
+                    "remote_google-search", {"query": "Python asyncio tutorial", "limit": 5, "timeout": 20000}
+                )
+            )
             bar.update(1)
+            response = await sandbox.session.list_tools()
+            available_tools = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.inputSchema,
+                    },
+                }
+                for tool in response.tools
+            ]
+            print(f"Available tools: {available_tools}")
+
             await asyncio.sleep(20)
 
     await asyncio.gather(*[start_sandbox() for _ in range(NUM_SANDBOXES)])
