@@ -15,6 +15,7 @@
 The main entry point to run the PPO algorithm
 """
 
+import datetime
 import json
 import logging
 import os
@@ -22,6 +23,7 @@ import warnings
 from dataclasses import asdict
 from typing import Any
 
+import numpy as np
 import psutil
 import torch
 import torch.distributed
@@ -60,6 +62,7 @@ from verl.utils.fsdp_utils import (
     fsdp_version,
     get_fsdp_wrap_policy,
     get_init_weight_context_manager,
+    get_shard_placement_fn,
     init_fn,
     layered_summon_lora_params,
     load_fsdp_model_to_gpu,
@@ -72,6 +75,7 @@ from verl.utils.model import compute_position_id_with_mask
 from verl.utils.profiler import DistProfiler, DistProfilerExtension, log_gpu_memory_usage, simple_timer
 from verl.utils.profiler.performance import reduce_timing
 from verl.utils.py_functional import convert_to_regular_types
+from verl.workers.config import FSDPCriticConfig, FSDPEngineConfig
 from verl.workers.sharding_manager.fsdp_ulysses import FSDPUlyssesShardingManager
 
 logger = logging.getLogger(__file__)
@@ -122,6 +126,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 backend=f"cpu:gloo,{get_device_name()}:{get_nccl_backend()}",
                 rank=rank,
                 world_size=world_size,
+                timeout=datetime.timedelta(seconds=self.config.get("nccl_timeout", 600)),
                 init_method=os.environ.get("DIST_INIT_METHOD", None),
             )
 
@@ -209,7 +214,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
     def _build_model_optimizer(
         self,
         model_path,
-        fsdp_config,
+        fsdp_config: FSDPEngineConfig,
         optim_config,
         override_model_config,
         use_remove_padding=False,
@@ -378,8 +383,8 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 mixed_precision=mixed_precision,
                 sync_module_states=True,
                 device_mesh=self.device_mesh,
-                use_orig_params=self.config.actor.fsdp_config.get("use_orig_params", False),
-                forward_prefetch=self.config.actor.fsdp_config.get("forward_prefetch", False),
+                use_orig_params=fsdp_config.get("use_orig_params", False),
+                forward_prefetch=fsdp_config.get("forward_prefetch", False),
             )
         elif fsdp_strategy == "fsdp2":
             assert CPUOffloadPolicy is not None, "PyTorch version >= 2.4 is required for using fully_shard API (FSDP2)"
@@ -398,6 +403,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 "mp_policy": mp_policy,
                 "offload_policy": cpu_offload,
                 "reshard_after_forward": fsdp_config.reshard_after_forward,
+                "shard_placement_fn": get_shard_placement_fn(fsdp_size=self.device_mesh.shape[-1]),
             }
             full_state = actor_module.state_dict()
             apply_fsdp2(actor_module, fsdp_kwargs, fsdp_config)
@@ -518,7 +524,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             log_gpu_memory_usage("After building sharding manager", logger=logger)
 
         elif rollout_name == "sglang":
-            from verl.workers.rollout.sglang_rollout import SGLangRollout
+            from verl.workers.rollout.sglang_rollout.sglang_rollout import SGLangRollout
 
             # NOTE(linjunrong): Due to recent fp8 support in SGLang. Now importing any symbol relate to
             # SGLang's model_runner would check CUDA device capability. However, due to verl's setting,
@@ -566,8 +572,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         # This is used to import external_lib into the huggingface systems
         import_external_libs(self.config.model.get("external_lib", None))
 
-        override_model_config = OmegaConf.to_container(self.config.model.get("override_config", OmegaConf.create()))
-
+        override_model_config = OmegaConf.to_container(OmegaConf.create(self.config.model.get("override_config", {})))
         use_remove_padding = self.config.model.get("use_remove_padding", False)
         use_shm = self.config.model.get("use_shm", False)
         use_fused_kernels = self.config.model.get("use_fused_kernels", False)
@@ -576,10 +581,10 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             # we need the model for actor and rollout
             if self._is_actor:
                 optim_config = self.config.actor.optim
-                fsdp_config = self.config.actor.fsdp_config
+                fsdp_config = omega_conf_to_dataclass(self.config.actor.fsdp_config)
             else:
                 optim_config = None
-                fsdp_config = OmegaConf.create()
+                fsdp_config = FSDPEngineConfig()
 
             local_path = copy_to_local(self.config.model.path, use_shm=use_shm)
             (
@@ -614,12 +619,9 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 log_gpu_memory_usage("After offload actor optimizer during init", logger=logger)
 
         if self._is_actor:
-            OmegaConf.set_struct(self.config.actor, True)
-            with open_dict(self.config.actor):
-                self.config.actor.use_remove_padding = use_remove_padding
-                self.config.actor.use_fused_kernels = use_fused_kernels
+            actor_cfg = omega_conf_to_dataclass(self.config.actor)
             self.actor = DataParallelPPOActor(
-                config=self.config.actor, actor_module=self.actor_module_fsdp, actor_optimizer=self.actor_optimizer
+                config=actor_cfg, actor_module=self.actor_module_fsdp, actor_optimizer=self.actor_optimizer
             )
 
         if self._is_rollout:
@@ -631,7 +633,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             local_path = copy_to_local(self.config.model.path, use_shm=use_shm)
             self.ref_module_fsdp = self._build_model_optimizer(
                 model_path=local_path,
-                fsdp_config=self.config.ref.fsdp_config,
+                fsdp_config=omega_conf_to_dataclass(self.config.ref.fsdp_config),
                 optim_config=None,
                 override_model_config=override_model_config,
                 use_remove_padding=use_remove_padding,
@@ -830,8 +832,11 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
 
         # https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
         # unshard the root FSDP module
-        if self.world_size > 1 and fsdp_version(self.ref_policy.actor_module) == 1:
-            self.ref_policy.actor_module._handle.reshard(True)
+        if self.world_size > 1:
+            if fsdp_version(self.ref_policy.actor_module) == 1:
+                self.ref_policy.actor_module._handle.reshard(True)
+            elif fsdp_version(self.ref_policy.actor_module) == 2:
+                self.ref_policy.actor_module.shard()
 
         return output
 
@@ -916,18 +921,19 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
 
 
 class CriticWorker(Worker, DistProfilerExtension):
-    def __init__(self, config):
+    def __init__(self, config: FSDPCriticConfig):
         Worker.__init__(self)
-        DistProfilerExtension.__init__(
-            self, DistProfiler(rank=self.rank, config=omega_conf_to_dataclass(config.get("profiler")))
-        )
+        DistProfilerExtension.__init__(self, DistProfiler(rank=self.rank, config=config.get("profiler")))
         import torch.distributed
 
+        self.config = config
         if not torch.distributed.is_initialized():
             torch.distributed.init_process_group(
-                backend=get_nccl_backend(), init_method=os.environ.get("DIST_INIT_METHOD", None)
+                backend=get_nccl_backend(),
+                timeout=datetime.timedelta(seconds=self.config.get("nccl_timeout", 600)),
+                init_method=os.environ.get("DIST_INIT_METHOD", None),
             )
-        self.config = config
+        self.config: FSDPCriticConfig = config
 
         # build device mesh for Ulysses Sequence Parallel
         world_size = torch.distributed.get_world_size()
@@ -996,8 +1002,7 @@ class CriticWorker(Worker, DistProfilerExtension):
                 self.processor.chat_template = self.config.model.custom_chat_template
             else:
                 self.tokenizer.chat_template = self.config.model.custom_chat_template
-
-        override_config = OmegaConf.to_container(self.config.model.get("override_config", OmegaConf.create()))
+        override_config = OmegaConf.to_container(OmegaConf.create(self.config.model.get("override_config", {})))
         override_config_kwargs = {
             "bos_token_id": self.tokenizer.bos_token_id,
             "eos_token_id": self.tokenizer.eos_token_id,
@@ -1126,6 +1131,7 @@ class CriticWorker(Worker, DistProfilerExtension):
                 "mp_policy": mp_policy,
                 "offload_policy": offload_policy,
                 "reshard_after_forward": fsdp_config.reshard_after_forward,
+                "shard_placement_fn": get_shard_placement_fn(fsdp_size=self.device_mesh.shape[-1]),
             }
             full_state = critic_module.state_dict()
             apply_fsdp2(critic_module, fsdp_kwargs, fsdp_config)
@@ -1163,8 +1169,14 @@ class CriticWorker(Worker, DistProfilerExtension):
                 optimizer=critic_optimizer, num_warmup_steps=num_warmup_steps
             )
         elif warmup_style == "cosine":
+            min_lr_ratio = config.optim.get("min_lr_ratio", 0.0)
+            num_cycles = config.optim.get("num_cycles", 0.5)
             critic_lr_scheduler = get_cosine_schedule_with_warmup(
-                optimizer=critic_optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=total_steps
+                optimizer=critic_optimizer,
+                num_warmup_steps=num_warmup_steps,
+                num_training_steps=total_steps,
+                min_lr_ratio=min_lr_ratio,
+                num_cycles=num_cycles,
             )
         else:
             raise NotImplementedError(f"Warmup style {warmup_style} is not supported")
@@ -1311,11 +1323,13 @@ class RewardModelWorker(Worker, DistProfilerExtension):
 
         import torch.distributed
 
+        self.config = config
         if not torch.distributed.is_initialized():
             torch.distributed.init_process_group(
-                backend=get_nccl_backend(), init_method=os.environ.get("DIST_INIT_METHOD", None)
+                backend=get_nccl_backend(),
+                timeout=datetime.timedelta(seconds=self.config.get("nccl_timeout", 600)),
+                init_method=os.environ.get("DIST_INIT_METHOD", None),
             )
-        self.config = config
 
         # build device mesh for Ulysses Sequence Parallel
         world_size = torch.distributed.get_world_size()
@@ -1413,6 +1427,7 @@ class RewardModelWorker(Worker, DistProfilerExtension):
                 "mesh": fsdp_mesh,
                 "offload_policy": cpu_offload,
                 "reshard_after_forward": config.model.fsdp_config.reshard_after_forward,
+                "shard_placement_fn": get_shard_placement_fn(fsdp_size=self.device_mesh.shape[-1]),
             }
             full_state = reward_module.state_dict()
             apply_fsdp2(reward_module, fsdp_kwargs, config.model.fsdp_config)
@@ -1526,11 +1541,13 @@ class RewardModelWorker(Worker, DistProfilerExtension):
         rm_attention_mask = []
 
         for i in range(data.batch.batch_size[0]):
+            if not isinstance(data.non_tensor_batch["raw_prompt"][i], list | np.ndarray):
+                raise TypeError(
+                    f"raw_prompt must be a list or numpy array, got {type(data.non_tensor_batch['raw_prompt'][i])}"
+                )
+
             # extract raw prompt
-            if isinstance(data.non_tensor_batch["raw_prompt"][i], list):
-                chat: list = data.non_tensor_batch["raw_prompt"][i]
-            else:
-                chat: list = data.non_tensor_batch["raw_prompt"][i].tolist()
+            chat: list = list(data.non_tensor_batch["raw_prompt"][i])
 
             # extract response
             response_ids = data.batch["responses"][i]
