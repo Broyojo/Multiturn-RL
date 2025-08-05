@@ -1,13 +1,13 @@
 {
     // following instructions from https://verl.readthedocs.io/en/latest/start/install.html
     "name": "Multiturn RL Devcontainer",
-    "image": "verlai/verl:app-verl0.5-vllm0.9.1-mcore0.12.2-te2.2",
+    "image": "verlai/verl:app-verl0.5-sglang0.4.9.post6-mcore0.12.2-te2.2",
     "workspaceFolder": "/workspace/verl",
     "mounts": [
         "source=${localWorkspaceFolder},target=/workspace/verl,type=bind",
         "source=${env:HOME}/.cache/huggingface,target=/root/.cache/huggingface,type=bind",
-        "source=${env:HOME}/.gitconfig,target=/root/.gitconfig,type=bind",
-        "source=${env:SSH_AUTH_SOCK},target=/ssh-agent,type=bind,consistency=cached"
+        // "source=${env:HOME}/.gitconfig,target=/root/.gitconfig,type=bind",
+        // "source=${env:SSH_AUTH_SOCK},target=/ssh-agent,type=bind,consistency=cached"
     ],
     "runArgs": [
         "--gpus",

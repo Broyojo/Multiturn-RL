@@ -39,10 +39,10 @@ class MultiturnAgentLoop(AgentLoopBase):
         cls.system_prompt = tokenizer.apply_chat_template([{}], add_generation_prompt=False, tokenize=True)
 
     @rollout_trace_op
-    async def run(self, messages: list[dict[str, Any]], sampling_params: dict[str, Any]) -> AgentLoopOutput:
+    async def run(self, sampling_params: dict[str, Any], **kwargs) -> AgentLoopOutput:
         metrics = {}
         request_id = uuid4().hex
-        rollout_config = json.loads(messages[0]["content"])
+        rollout_config = json.loads(kwargs["raw_prompt"][0]["content"])
 
         async with Sandbox(**rollout_config["sandbox"]) as sandbox:
             response = await sandbox.session.list_tools()
@@ -59,7 +59,7 @@ class MultiturnAgentLoop(AgentLoopBase):
             ]
             prompt_ids = await run_async(
                 lambda: self.tokenizer.apply_chat_template(
-                    messages[1:], tools=available_tools, add_generation_prompt=True, tokenize=True
+                    kwargs["raw_prompt"][1:], tools=available_tools, add_generation_prompt=True, tokenize=True
                 )
             )
             response_mask = []
